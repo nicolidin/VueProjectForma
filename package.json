@@ -1,0 +1,30 @@
+{
+  "name": "vueprojectforma",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "lidin-app-kit": "1.0.1-beta.6",
+    "lodash-es": "^4.17.21",
+    "markdown-it": "^14.1.0",
+    "pinia": "^2.2.4",
+    "pinia-plugin-persistedstate": "^4.1.1",
+    "sass": "^1.80.4",
+    "vue": "^3.5.13",
+    "vue-i18n": "^9.14.2",
+    "vuedraggable": "^4.1.0",
+    "vuetify": "^3.7.3"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.3",
+    "@vue/tsconfig": "^0.7.0",
+    "typescript": "~5.8.3",
+    "vite": "^6.3.5",
+    "vue-tsc": "^2.2.8"
+  }
+}
