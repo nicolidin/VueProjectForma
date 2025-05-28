@@ -1,25 +1,21 @@
 <template>
   <h1>{{ msg }}</h1>
-
   <div class="card">
     <button type="button" @click="count++">count is damn {{ count }}</button>
   </div>
 
-
-  <Arti
-  <MozaicArticles :articles="articles.data" @clickOnArticle="openArticle" />
   <p class="read-the-docs">Click on the Vite and Vue logos to learn more</p>
 </template>
 
 <script setup lang="ts">
 
-import { MozaicArticles } from "lidin-app-kit";
 import { ref } from 'vue'
+import {ArticlePreview} from "lidin-app-kit";
 
 defineProps<{ msg: string }>()
 
 const count = ref(0)
-</script><<
+</script>
 
 
 
