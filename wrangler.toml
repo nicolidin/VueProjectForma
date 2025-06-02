@@ -1,7 +1,0 @@
-name = "nom-de-ton-projet"
-
-[build]
-command = "yarn install && yarn build"
-
-format = "directory"
-dir = "./dist"
