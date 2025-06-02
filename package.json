@@ -1,19 +1,20 @@
 {
   "name": "vueprojectforma",
   "private": true,
+  "packageManager": "yarn@4.5.0",
   "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
-    "full-install": "yarn install && npx install-peerdeps lidin-app-kit@1.0.1-beta.8 --yarn"
+    "full-install": "yarn install && npx install-peerdeps lidin-app-kit@1.0.1-beta.9 --yarn"
   },
   "dependencies": {
-    "lidin-app-kit": "1.0.1-beta.8",
+    "lidin-app-kit": "1.0.1-beta.9",
     "lodash-es": "^4.17.21",
     "markdown-it": "^14.1.0",
-    "pinia": "^2.2.4",
+    "pinia": "^3.0.2",
     "pinia-plugin-persistedstate": "^4.1.1",
     "sass": "^1.80.4",
     "vue": "^3.0.0",
