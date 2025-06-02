@@ -1,0 +1,5 @@
+name = "vue-nico-forma"
+compatibility_date = "2025-06-02"
+
+[site]
+bucket = "./dist"
