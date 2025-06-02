@@ -1,5 +1,9 @@
-name = "vue-nico-forma"
+name = "ton-nom-de-site"
 compatibility_date = "2025-06-02"
 
-[site]
-bucket = "./dist"
+[build]
+command = "yarn run build"
+
+[build.upload]
+format = "directory"
+dir = "./dist"
