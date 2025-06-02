@@ -1,5 +1,4 @@
 name = "nom-de-ton-projet"
-type = "javascript"
 
 [build]
 command = "yarn install && yarn build"
