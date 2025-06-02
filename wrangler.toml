@@ -1,9 +1,8 @@
-name = "ton-nom-de-site"
-compatibility_date = "2025-06-02"
+name = "nom-de-ton-projet"
+type = "javascript"
 
 [build]
-command = "yarn run build"
+command = "yarn install && yarn build"
 
-[build.upload]
 format = "directory"
 dir = "./dist"
