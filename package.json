@@ -6,23 +6,27 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "full-install": "yarn install && npx install-peerdeps lidin-app-kit@1.0.1-beta.8 --yarn"
   },
   "dependencies": {
-    "lidin-app-kit": "^1.0.1-beta.7",
+    "lidin-app-kit": "1.0.1-beta.8",
     "lodash-es": "^4.17.21",
     "markdown-it": "^14.1.0",
     "pinia": "^2.2.4",
     "pinia-plugin-persistedstate": "^4.1.1",
     "sass": "^1.80.4",
-    "vue": "^3.5.13",
+    "vue": "^3.0.0",
     "vue-i18n": "^9.14.2",
+    "vue-router": "^4.5.1",
     "vuedraggable": "^4.1.0",
-    "vuetify": "^3.7.3"
+    "vuetify": "^3.7.3",
+    "zod": "^3.25.32"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.3",
     "@vue/tsconfig": "^0.7.0",
+    "install-peerdeps": "^3.0.7",
     "typescript": "~5.8.3",
     "vite": "^6.3.5",
     "vue-tsc": "^2.2.8"
