@@ -1,15 +1,19 @@
 <script setup lang="ts">
+import {Layout} from "lidin-app-kit";
 </script>
 
 <template>
-  <nav>
-    <router-link to="/">Accueil</router-link>
-    <router-link to="/about">À propos</router-link>
-  </nav>
-  <router-view />
+  <Layout class="layout" >
+    <router-view />
+  </Layout>
 </template>
 
 <style scoped>
+.layout {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
 .logo {
   height: 6em;
   padding: 1.5em;

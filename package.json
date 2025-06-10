@@ -11,7 +11,8 @@
     "full-install": "yarn install && npx install-peerdeps lidin-app-kit@1.0.1-beta.9 --yarn"
   },
   "dependencies": {
-    "lidin-app-kit": "1.0.1-beta.9",
+    "axios": "^1.9.0",
+    "lidin-app-kit": "1.0.1-beta.13",
     "lodash-es": "^4.17.21",
     "markdown-it": "^14.1.0",
     "pinia": "^3.0.2",

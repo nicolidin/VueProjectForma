@@ -12,8 +12,8 @@
 <script setup lang="ts">
 
 import { ref } from 'vue'
-import {ArticlePreview} from "lidin-app-kit";
 import {useCounterStore} from "../stores/counter.ts";
+import {ArticlePreview} from "lidin-app-kit";
 
 defineProps<{ msg: string }>()
 const counterStore = useCounterStore();
