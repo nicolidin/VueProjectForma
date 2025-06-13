@@ -1,25 +1,41 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
-import { merge } from 'lodash'
-import type { Note } from '@/api/noteService'
+import {computed, ref} from 'vue'
+import { merge } from 'lodash-es'
+import type {NoteType} from "@/types/NoteType.ts";
 
-export const useNotesStore = defineStore('notes', () => {
-  const notes = ref<Note[]>([])
+export const useNotesStore = defineStore('notes',
+  () => {
+    const notes = ref<NoteType[]>([])
 
-  function addNote(note: Note) {
-    notes.value.push(note)
-  }
-
-  function editNote(id: number, updatedNote: Partial<Note>) {
-    const index = notes.value.findIndex(note => note.id === id)
-    if (index !== -1) {
-      notes.value[index] = merge({}, notes.value[index], updatedNote)
+    const getNoteById = (id: string) => {
+      return computed(() => notes.value.find((item: any) => item.id === id))
     }
-  }
 
-  return {
-    notes,
-    addNote,
-    editNote
-  }
-}) 
+    function setAllNotes(newNotes: Array<NoteType>) {
+      notes.value = newNotes
+    }
+
+    function addNote(note: NoteType) {
+      notes.value.push(note)
+    }
+
+    function editNote(id: number, updatedNote: Partial<NoteType>) {
+      const index = notes.value.findIndex((note: any) => note.id === id)
+      if (index !== -1) {
+        notes.value[index] = merge({}, notes.value[index], updatedNote)
+      }
+    }
+
+    return {
+      notes,
+      getNoteById,
+      addNote,
+      setAllNotes,
+      editNote
+    }
+  },{
+    persist: {
+      key: 'notes', // clé dans localStorage
+      storage: localStorage, // facultatif, car par défaut c’est localStorage
+    }
+  })

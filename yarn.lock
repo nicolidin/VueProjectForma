@@ -632,6 +632,22 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/lodash-es@npm:^4.17.12":
+  version: 4.17.12
+  resolution: "@types/lodash-es@npm:4.17.12"
+  dependencies:
+    "@types/lodash": "npm:*"
+  checksum: 10c0/5d12d2cede07f07ab067541371ed1b838a33edb3c35cb81b73284e93c6fd0c4bbeaefee984e69294bffb53f62d7272c5d679fdba8e595ff71e11d00f2601dde0
+  languageName: node
+  linkType: hard
+
+"@types/lodash@npm:*":
+  version: 4.17.17
+  resolution: "@types/lodash@npm:4.17.17"
+  checksum: 10c0/8e75df02a15f04d4322c5a503e4efd0e7a92470570ce80f17e9f11ce2b1f1a7c994009c9bcff39f07e0f9ffd8ccaff09b3598997c404b801abd5a7eee5a639dc
+  languageName: node
+  linkType: hard
+
 "@vitejs/plugin-vue@npm:^5.2.3":
   version: 5.2.4
   resolution: "@vitejs/plugin-vue@npm:5.2.4"
@@ -1816,21 +1832,22 @@ __metadata:
   languageName: node
   linkType: hard
 
-"lidin-app-kit@npm:1.0.1-beta.13":
-  version: 1.0.1-beta.13
-  resolution: "lidin-app-kit@npm:1.0.1-beta.13"
+"lidin-app-kit@npm:1.0.1-beta.22":
+  version: 1.0.1-beta.22
+  resolution: "lidin-app-kit@npm:1.0.1-beta.22"
   peerDependencies:
     lodash-es: ^4.17.21
     markdown-it: ^14.1.0
     pinia: ^3.0.2
     pinia-plugin-persistedstate: ^4.1.1
     sass: ^1.80.4
+    uuid: ^9.0.0
     vue: ^3.0.0
     vue-i18n: ^9.14.2
     vuedraggable: ^4.1.0
     vuetify: ^3.7.3
     zod: ^3.25.32
-  checksum: 10c0/f513ac37b719ed8c2d7f576e9282b6dfcc84980cdb88342e84131f721bb815153dd4b12f1faabe92820dd008286f321a721dd20c0d87c15f97ea2734f4abae7c
+  checksum: 10c0/be9964627381b3730676c1b6e5d471217fb5b4ffdc2ec2a04ebaf9290d108269127149fb02d5e8d4c9e69e8e660e5b1b37d63c0674873a9173954b8f7a6c2957
   languageName: node
   linkType: hard
 
@@ -2062,6 +2079,13 @@ __metadata:
     pkg-types: "npm:^1.3.0"
     ufo: "npm:^1.5.4"
   checksum: 10c0/69e738218a13d6365caf930e0ab4e2b848b84eec261597df9788cefb9930f3e40667be9cb58a4718834ba5f97a6efeef31d3b5a95f4388143fd4e0d0deff72ff
+  languageName: node
+  linkType: hard
+
+"moment@npm:^2.30.1":
+  version: 2.30.1
+  resolution: "moment@npm:2.30.1"
+  checksum: 10c0/865e4279418c6de666fca7786607705fd0189d8a7b7624e2e56be99290ac846f90878a6f602e34b4e0455c549b85385b1baf9966845962b313699e7cb847543a
   languageName: node
   linkType: hard
 
@@ -2845,6 +2869,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"uuid@npm:^9.0.0":
+  version: 9.0.1
+  resolution: "uuid@npm:9.0.1"
+  bin:
+    uuid: dist/bin/uuid
+  checksum: 10c0/1607dd32ac7fc22f2d8f77051e6a64845c9bce5cd3dd8aa0070c074ec73e666a1f63c7b4e0f4bf2bc8b9d59dc85a15e17807446d9d2b17c8485fbc2147b27f9b
+  languageName: node
+  linkType: hard
+
 "vite@npm:^6.3.5":
   version: 6.3.5
   resolution: "vite@npm:6.3.5"
@@ -2978,17 +3011,20 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "vueprojectforma@workspace:."
   dependencies:
+    "@types/lodash-es": "npm:^4.17.12"
     "@vitejs/plugin-vue": "npm:^5.2.3"
     "@vue/tsconfig": "npm:^0.7.0"
     axios: "npm:^1.9.0"
     install-peerdeps: "npm:^3.0.7"
-    lidin-app-kit: "npm:1.0.1-beta.13"
+    lidin-app-kit: "npm:1.0.1-beta.22"
     lodash-es: "npm:^4.17.21"
     markdown-it: "npm:^14.1.0"
+    moment: "npm:^2.30.1"
     pinia: "npm:^3.0.2"
     pinia-plugin-persistedstate: "npm:^4.1.1"
     sass: "npm:^1.80.4"
     typescript: "npm:~5.8.3"
+    uuid: "npm:^9.0.0"
     vite: "npm:^6.3.5"
     vue: "npm:^3.0.0"
     vue-i18n: "npm:^9.14.2"
