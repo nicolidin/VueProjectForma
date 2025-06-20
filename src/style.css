@@ -1,1 +1,3 @@
-@import 'lidin-app-kit/dist/style.css';
+/* this is for importing building style from lidin-app-kit, meaning components styles !
+for importing scss variable it is inside lidin-app-kit.scss in vite.config.ts file
+*/

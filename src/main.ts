@@ -1,5 +1,10 @@
 import { createApp } from 'vue'
-import './style.css'
+
+// console.log("import.meta.env.PROD", import.meta?.env?.PROD)
+
+console.log("MODE: ", import.meta.env.MODE)
+import('lidin-app-kit/style.css') // in dev mode it takes empty file and in build it takes the builded css lib file ! (components style etc)
+
 import App from './App.vue'
 import {createLidinAppKit, DEFAULT_VUETIFY_CONFIG} from "lidin-app-kit";
 import router from "./router";
