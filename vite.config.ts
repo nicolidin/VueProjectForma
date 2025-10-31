@@ -3,16 +3,23 @@ import vue from '@vitejs/plugin-vue'
 import path from 'path'
 
 export default defineConfig(({mode}) => {
+  console.log("mode: ", mode)
   const isDev = mode === 'development';
-  console.log("isDev: ", isDev)
 
   return {
     plugins: [vue()],
     resolve: {
       alias: [
-       ...(isDev
+        {
+          find: '@',
+          replacement: path.resolve(__dirname, 'src')
+        },
+        ...(isDev
           ? [
-              { find: 'lidin-app-kit', replacement: path.resolve(__dirname, '../lidin-app-kit/src') }
+              {
+                find: 'lidin-app-kit',
+                replacement: path.resolve(__dirname, '../../../lidin-app-kit/src')
+              }
             ]
           : []
         )]
