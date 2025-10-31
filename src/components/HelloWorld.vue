@@ -4,7 +4,7 @@
     <button type="button" @click="count++">count is damn {{ count }}</button>
     <button type="button" @click="counterStore.increment">count store </button>
   </div>
-  <ArticlePreview content="dqgqkddk"/>
+  <!-- <ArticlePreview content="dqgqkddk"/> -->
   count store: {{counterStore.count}}
   <p class="read-the-docs">Click on the Vite and Vue logos to learn more</p>
 </template>
@@ -13,7 +13,7 @@
 
 import { ref } from 'vue'
 import {useCounterStore} from "../stores/counter.ts";
-import {ArticlePreview} from "lidin-app-kit";
+// import {ArticlePreview} from "vue-lib-exo-corrected"; // Component not available in vue-lib-exo-corrected
 
 defineProps<{ msg: string }>()
 const counterStore = useCounterStore();

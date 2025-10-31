@@ -1,5 +1,5 @@
 // Type pour les notes
-import {generateRandomUuid} from "lidin-app-kit";
+import {generateRandomUuid} from "vue-lib-exo-corrected";
 import {merge} from "lodash-es";
 import moment from "moment";
 

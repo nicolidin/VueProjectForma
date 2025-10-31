@@ -1,7 +1,7 @@
 <template>
-  <NoteCreation @create="addNote" class="noteCreation"/>
+<!--  <NoteCreation @create="addNote" class="noteCreation"/>-->
 <!--  <div class="noteCreation"></div>-->
-  <MozaicArticles :articles="notesStore.notes" @click-on-article="onClickArticle" />
+<!--  <MozaicArticles :articles="notesStore.notes" @click-on-article="onClickArticle" />-->
   <ListNote :notes="notesStore.notes" />
   <ListUsers :users="sampleUsers" />
   <Parent />
@@ -10,17 +10,14 @@
 
 <script setup lang="ts">
 
-import { MozaicArticles, NoteCreation} from "lidin-app-kit";
+import { ListNote, ListUsers} from "vue-lib-exo-corrected";
 import {useNotesStore} from "../stores/notes.ts";
 import {onBeforeMount } from "vue";
 import { fetchNotes } from "../api/noteApi.ts";
 import { initNote } from "../types/NoteType.ts";
 import { appendContentToTitle } from "../services/markdownUtils.ts";
 import {useRouter} from "vue-router";
-import type {NoteCreated} from "lidin-app-kit"
 import type { User } from "@/types/UserType"
-import ListNote from "../components/FrançoisFabrice/ListNote.vue";
-import ListUsers from "../components/FrançoisFabrice/ListUsers.vue";
 import Parent from "../components/FrançoisFabrice/RefExemple/Parent.vue";
 
 const notesStore = useNotesStore()
@@ -36,8 +33,19 @@ const sampleUsers: User[] = [
 ]
 
 
+// Type local pour la création de note (si nécessaire)
+type NoteCreated = {
+  contentMd: string;
+  title?: string;
+  status?: 'active' | 'completed';
+  priority?: 'high' | 'medium' | 'low';
+  tags?: string[];
+}
+
 function addNote(newVal: NoteCreated) {
-  const formatedContentMd = appendContentToTitle(newVal.contentMd, newVal.title);
+  const formatedContentMd = newVal.title 
+    ? appendContentToTitle(newVal.contentMd, newVal.title)
+    : newVal.contentMd;
   delete (newVal as any).title;
   newVal.contentMd = formatedContentMd;
   const newNote = initNote(newVal)
@@ -68,7 +76,7 @@ onBeforeMount(async () => {
         tags: ['test', 'première']
       },
       {
-        id: '2', 
+        id: '2',
         contentMd: '# Note importante\n\nCette note est très importante pour le projet.',
         createdAt: '2024-01-02',
         status: 'completed' as const,

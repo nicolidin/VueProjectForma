@@ -3,10 +3,10 @@ import { createApp } from 'vue'
 // console.log("import.meta.env.PROD", import.meta?.env?.PROD)
 
 console.log("MODE: ", import.meta.env.MODE)
-import('lidin-app-kit/style.css') // in dev mode it takes empty file and in build it takes the builded css lib file ! (components style etc)
+import 'vue-lib-exo-corrected/style.css' // Import statique (synchrone)
 
 import App from './App.vue'
-import {createLidinAppKit, DEFAULT_VUETIFY_CONFIG} from "lidin-app-kit";
+import {createLidinAppKit, DEFAULT_VUETIFY_CONFIG} from "vue-lib-exo-corrected";
 import router from "./router";
 import {createPinia} from "pinia";
 import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'

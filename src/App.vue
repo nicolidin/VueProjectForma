@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {Layout} from "lidin-app-kit";
+import {Layout} from "vue-lib-exo-corrected";
 </script>
 
 <template>

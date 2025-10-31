@@ -17,8 +17,8 @@ export default defineConfig(({mode}) => {
         ...(isDev
           ? [
               {
-                find: 'lidin-app-kit',
-                replacement: path.resolve(__dirname, '../../../lidin-app-kit/src')
+                find: 'vue-lib-exo-corrected',
+                replacement: path.resolve(__dirname, '../../Common/vue-lib-exo-nico-corrected/src')
               }
             ]
           : []
@@ -28,8 +28,8 @@ export default defineConfig(({mode}) => {
       preprocessorOptions: {
         scss: {
           additionalData: `
-            @use "lidin-app-kit/styles/lidin-app-kit.scss" as *;
-          ` // it's only to get $scss variables like $spacing etc, not to apply components style, we do it in main.ts importing lidin-app-kit/style.css !
+            @use "vue-lib-exo-corrected/styles/vue-lib-exo-corrected.scss" as *;
+          ` // it's only to get $scss variables like $spacing etc, not to apply components style, we do it in main.ts importing vue-lib-exo-corrected/style.css !
         }
       },
     }

@@ -1832,25 +1832,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"lidin-app-kit@npm:1.0.1-beta.28":
-  version: 1.0.1-beta.28
-  resolution: "lidin-app-kit@npm:1.0.1-beta.28"
-  peerDependencies:
-    lodash-es: ^4.17.21
-    markdown-it: ^14.1.0
-    pinia: ^3.0.2
-    pinia-plugin-persistedstate: ^4.1.1
-    sass: ^1.80.4
-    uuid: ^9.0.0
-    vue: ^3.0.0
-    vue-i18n: ^9.14.2
-    vuedraggable: ^4.1.0
-    vuetify: ^3.7.3
-    zod: ^3.25.32
-  checksum: 10c0/b3d699077150d092ad01cb1bbd2181e290bbc77e9a6b3146d83ef8ea236ae279ca4d1f71fc9f2add298a4850284771601e449a833189e09fdeaf2e3966d441be
-  languageName: node
-  linkType: hard
-
 "linkify-it@npm:^5.0.0":
   version: 5.0.0
   resolution: "linkify-it@npm:5.0.0"
@@ -2953,6 +2934,25 @@ __metadata:
   languageName: node
   linkType: hard
 
+"vue-lib-exo-corrected@npm:1.0.1-beta.0":
+  version: 1.0.1-beta.0
+  resolution: "vue-lib-exo-corrected@npm:1.0.1-beta.0"
+  peerDependencies:
+    lodash-es: ^4.17.21
+    markdown-it: ^14.1.0
+    pinia: ^3.0.2
+    pinia-plugin-persistedstate: ^4.1.1
+    sass: ^1.80.4
+    uuid: ^9.0.0
+    vue: ^3.0.0
+    vue-i18n: ^9.14.2
+    vuedraggable: ^4.1.0
+    vuetify: ^3.7.3
+    zod: ^3.25.32
+  checksum: 10c0/bfcb923b8886b824d80681d2e3d0a4e2051994562b92c349025b4033881f1ab7265b59d94c5a2174add5dad6d57076acd78764456b9c40b1451c20201378bd6d
+  languageName: node
+  linkType: hard
+
 "vue-router@npm:^4.5.1":
   version: 4.5.1
   resolution: "vue-router@npm:4.5.1"
@@ -3016,7 +3016,6 @@ __metadata:
     "@vue/tsconfig": "npm:^0.7.0"
     axios: "npm:^1.9.0"
     install-peerdeps: "npm:^3.0.7"
-    lidin-app-kit: "npm:1.0.1-beta.28"
     lodash-es: "npm:^4.17.21"
     markdown-it: "npm:^14.1.0"
     moment: "npm:^2.30.1"
@@ -3028,6 +3027,7 @@ __metadata:
     vite: "npm:^6.3.5"
     vue: "npm:^3.0.0"
     vue-i18n: "npm:^9.14.2"
+    vue-lib-exo-corrected: "npm:1.0.1-beta.0"
     vue-router: "npm:^4.5.1"
     vue-tsc: "npm:^2.2.8"
     vuedraggable: "npm:^4.1.0"
