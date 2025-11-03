@@ -1,16 +1,16 @@
 <template>
-<!--  <NoteCreation @create="addNote" class="noteCreation"/>-->
-<!--  <div class="noteCreation"></div>-->
-<!--  <MozaicArticles :articles="notesStore.notes" @click-on-article="onClickArticle" />-->
-  <ListNote :notes="notesStore.notes" />
-  <ListUsers :users="sampleUsers" />
-  <Parent />
+  <div class="home">
+    <NoteCreation @create="addNote" class="home__note-creation" />
+    <ListNote :notes="notesStore.notes" />
+    <ListUsers :users="sampleUsers" />
+    <Parent />
+  </div>
 </template>
 
 
 <script setup lang="ts">
 
-import { ListNote, ListUsers} from "vue-lib-exo-corrected";
+import { ListNote, ListUsers, NoteCreation} from "vue-lib-exo-corrected";
 import {useNotesStore} from "../stores/notes.ts";
 import {onBeforeMount } from "vue";
 import { fetchNotes } from "../api/noteApi.ts";
@@ -23,8 +23,6 @@ import Parent from "../components/FrançoisFabrice/RefExemple/Parent.vue";
 const notesStore = useNotesStore()
 const router = useRouter()
 
-const newNote = initNote({contentMd: 'dqdd'})
-
 // Données d'exemple pour les utilisateurs
 const sampleUsers: User[] = [
   { id: 1, name: 'Alice Dupont', email: 'alice@example.com', role: 'Admin', isActive: true },
@@ -33,23 +31,18 @@ const sampleUsers: User[] = [
 ]
 
 
-// Type local pour la création de note (si nécessaire)
-type NoteCreated = {
-  contentMd: string;
-  title?: string;
-  status?: 'active' | 'completed';
-  priority?: 'high' | 'medium' | 'low';
-  tags?: string[];
-}
-
-function addNote(newVal: NoteCreated) {
-  const formatedContentMd = newVal.title 
-    ? appendContentToTitle(newVal.contentMd, newVal.title)
-    : newVal.contentMd;
-  delete (newVal as any).title;
-  newVal.contentMd = formatedContentMd;
-  const newNote = initNote(newVal)
-  notesStore.addNote(newNote)
+function addNote(newVal: { title: string; contentMd: string }) {
+  // Format the content with title at the beginning
+  const formatedContentMd = appendContentToTitle(newVal.contentMd, newVal.title);
+  
+  // Create the note using initNote (which will add id, createdAt, etc.)
+  const newNote = initNote({
+    contentMd: formatedContentMd,
+    status: 'active',
+    tags: []
+  });
+  
+  notesStore.addNote(newNote);
 }
 
 function onClickArticle(data: any) {
@@ -99,7 +92,9 @@ onBeforeMount(async () => {
 
 
 <style scoped lang="scss">
-.noteCreation {
-  padding-bottom: $spacing-24;
+.home {
+  &__note-creation {
+    margin-bottom: $spacing-24;
+  }
 }
 </style>
