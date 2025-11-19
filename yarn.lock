@@ -2934,9 +2934,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"vue-lib-exo-corrected@npm:1.0.1-beta.0":
-  version: 1.0.1-beta.0
-  resolution: "vue-lib-exo-corrected@npm:1.0.1-beta.0"
+"vue-lib-exo-corrected@npm:1.0.1-beta.1":
+  version: 1.0.1-beta.1
+  resolution: "vue-lib-exo-corrected@npm:1.0.1-beta.1"
   peerDependencies:
     lodash-es: ^4.17.21
     markdown-it: ^14.1.0
@@ -2949,7 +2949,7 @@ __metadata:
     vuedraggable: ^4.1.0
     vuetify: ^3.7.3
     zod: ^3.25.32
-  checksum: 10c0/bfcb923b8886b824d80681d2e3d0a4e2051994562b92c349025b4033881f1ab7265b59d94c5a2174add5dad6d57076acd78764456b9c40b1451c20201378bd6d
+  checksum: 10c0/9d6f07a1926f3a5295a7c3e4c75f7e2878cc04598636fcd0b3980126fe14a1314ab54a1ac77d527ac6a5f98f01e32e869e22aa4d6f116ead02b9982406181a70
   languageName: node
   linkType: hard
 
@@ -3027,7 +3027,7 @@ __metadata:
     vite: "npm:^6.3.5"
     vue: "npm:^3.0.0"
     vue-i18n: "npm:^9.14.2"
-    vue-lib-exo-corrected: "npm:1.0.1-beta.0"
+    vue-lib-exo-corrected: "npm:1.0.1-beta.1"
     vue-router: "npm:^4.5.1"
     vue-tsc: "npm:^2.2.8"
     vuedraggable: "npm:^4.1.0"
