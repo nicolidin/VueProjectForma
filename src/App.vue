@@ -1,9 +1,33 @@
 <script setup lang="ts">
 import {Layout} from "vue-lib-exo-corrected";
+import {useNotesStore} from "./stores/notes.ts";
+import {computed} from "vue";
+
+const notesStore = useNotesStore();
+
+// Convertir les tags du store au format attendu par SidebarTags
+const tagsForSidebar = computed(() => {
+  return notesStore.tags.map(tag => ({
+    libelleName: tag.title,
+    isSelected: false
+  }));
+});
+
+function handleTagCreate(tag: { title: string; color: string }) {
+  notesStore.addTag({
+    title: tag.title,
+    color: tag.color
+  });
+}
 </script>
 
 <template>
-  <Layout class="layout" :show-tags-sidebar="true" >
+  <Layout 
+    class="layout" 
+    :show-tags-sidebar="true"
+    :tags="tagsForSidebar"
+    @tag-create="handleTagCreate"
+  >
     <router-view />
   </Layout>
 </template>
