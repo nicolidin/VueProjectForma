@@ -3,7 +3,7 @@ import {Layout} from "vue-lib-exo-corrected";
 </script>
 
 <template>
-  <Layout class="layout" >
+  <Layout class="layout" :show-tags-sidebar="true" >
     <router-view />
   </Layout>
 </template>
