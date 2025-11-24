@@ -9,7 +9,8 @@ const notesStore = useNotesStore();
 const tagsForSidebar = computed(() => {
   return notesStore.tags.map(tag => ({
     libelleName: tag.title,
-    isSelected: false
+    isSelected: false,
+    color: tag.color
   }));
 });
 
