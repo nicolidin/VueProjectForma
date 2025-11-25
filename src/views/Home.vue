@@ -5,7 +5,7 @@
       @create="addNote" 
       class="home__note-creation" 
     />
-    <ListNote :notes="notesStore.notes" />
+    <ListNote :notes="notesStore.notes" :available-tags="notesStore.tags" />
   </div>
 </template>
 
