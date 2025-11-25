@@ -1,18 +1,35 @@
 <script setup lang="ts">
 import {Layout} from "vue-lib-exo-corrected";
 import {useNotesStore} from "./stores/notes.ts";
-import {computed} from "vue";
+import {computed, ref} from "vue";
 
 const notesStore = useNotesStore();
+
+// État local pour gérer la sélection des tags
+const selectedTags = ref<Set<string>>(new Set());
 
 // Convertir les tags du store au format attendu par SidebarTags
 const tagsForSidebar = computed(() => {
   return notesStore.tags.map(tag => ({
     libelleName: tag.title,
-    isSelected: false,
+    isSelected: selectedTags.value.has(tag.title),
     color: tag.color
   }));
 });
+
+function handleTagClick(tag: { libelleName: string; isSelected: boolean }) {
+  if (tag.libelleName === "All Notes") {
+    // Si "All Notes" est cliqué, désélectionner tous les tags
+    selectedTags.value.clear();
+  } else {
+    // Toggle la sélection du tag
+    if (tag.isSelected) {
+      selectedTags.value.delete(tag.libelleName);
+    } else {
+      selectedTags.value.add(tag.libelleName);
+    }
+  }
+}
 
 function handleTagCreate(tag: { title: string; color: string }) {
   notesStore.addTag({
@@ -27,6 +44,7 @@ function handleTagCreate(tag: { title: string; color: string }) {
     class="layout" 
     :show-tags-sidebar="true"
     :tags="tagsForSidebar"
+    @tag-click="handleTagClick"
     @tag-create="handleTagCreate"
   >
     <router-view />
