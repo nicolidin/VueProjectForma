@@ -9,6 +9,9 @@ export const useNotesStore = defineStore('notes',
   () => {
     const notes = ref<NoteType[]>([])
     const tags = ref<TagType[]>([])
+    // État pour gérer la sélection des tags (par nom de tag)
+    // Utilisation d'un tableau au lieu d'un Set pour la réactivité Vue
+    const selectedTagNames = ref<string[]>([])
 
     const getNoteById = (id: string) => {
       return computed(() => notes.value.find((item: any) => item.id === id))
@@ -17,6 +20,31 @@ export const useNotesStore = defineStore('notes',
     const getTagById = (id: string) => {
       return computed(() => tags.value.find((tag: TagType) => tag.id === id))
     }
+
+    // Computed pour obtenir les IDs des tags sélectionnés
+    const selectedTagIds = computed(() => {
+      if (selectedTagNames.value.length === 0) {
+        return null
+      }
+      return new Set(
+        tags.value
+          .filter(tag => selectedTagNames.value.includes(tag.title))
+          .map(tag => tag.id)
+      )
+    })
+
+    // Computed pour filtrer les notes selon les tags sélectionnés
+    const filteredNotes = computed(() => {
+      // Si aucun tag n'est sélectionné, afficher toutes les notes
+      if (selectedTagIds.value === null) {
+        return notes.value
+      }
+      
+      // Filtrer les notes qui ont au moins un des tags sélectionnés
+      return notes.value.filter((note: NoteType) => {
+        return note.tagIds.some(tagId => selectedTagIds.value!.has(tagId))
+      })
+    })
 
     function setAllNotes(newNotes: Array<NoteType>) {
       notes.value = newNotes
@@ -60,9 +88,30 @@ export const useNotesStore = defineStore('notes',
       }
     }
 
+    // Méthodes pour gérer la sélection des tags
+    function setTagSelected(tagName: string, isSelected: boolean) {
+      if (isSelected) {
+        if (!selectedTagNames.value.includes(tagName)) {
+          selectedTagNames.value.push(tagName)
+        }
+      } else {
+        const index = selectedTagNames.value.indexOf(tagName)
+        if (index > -1) {
+          selectedTagNames.value.splice(index, 1)
+        }
+      }
+    }
+
+    function clearSelectedTags() {
+      selectedTagNames.value.length = 0
+    }
+
     return {
       notes,
       tags,
+      selectedTagNames,
+      selectedTagIds,
+      filteredNotes,
       getNoteById,
       getTagById,
       addNote,
@@ -71,11 +120,15 @@ export const useNotesStore = defineStore('notes',
       setAllTags,
       addTag,
       editTag,
-      deleteTag
+      deleteTag,
+      setTagSelected,
+      clearSelectedTags
     }
   },{
     persist: {
       key: 'notes', // clé dans localStorage
       storage: localStorage, // facultatif, car par défaut c'est localStorage
+      // Exclure selectedTagNames de la persistance car c'est un Set et on ne veut pas persister l'état de sélection
+      pick: ['notes', 'tags']
     }
   })

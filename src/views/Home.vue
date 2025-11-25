@@ -5,7 +5,7 @@
       @create="addNote" 
       class="home__note-creation" 
     />
-    <ListNote :notes="notesStore.notes" :available-tags="notesStore.tags" />
+    <ListNote :notes="notesStore.filteredNotes" :available-tags="notesStore.tags" />
   </div>
 </template>
 
@@ -14,7 +14,7 @@
 
 import { ListNote, NoteCreation} from "vue-lib-exo-corrected";
 import {useNotesStore} from "../stores/notes.ts";
-import {onBeforeMount } from "vue";
+import {onBeforeMount} from "vue";
 import { fetchNotes } from "../api/noteApi.ts";
 import { initNote } from "../types/NoteType.ts";
 import { appendContentToTitle } from "../services/markdownUtils.ts";

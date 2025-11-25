@@ -1,35 +1,28 @@
 <script setup lang="ts">
 import {Layout} from "vue-lib-exo-corrected";
 import {useNotesStore} from "./stores/notes.ts";
-import {computed, ref} from "vue";
+import {computed} from "vue";
 
 const notesStore = useNotesStore();
-
-// État local pour gérer la sélection des tags
-const selectedTags = ref<Set<string>>(new Set());
 
 // Convertir les tags du store au format attendu par SidebarTags
 const tagsForSidebar = computed(() => {
   return notesStore.tags.map(tag => ({
     libelleName: tag.title,
-    isSelected: selectedTags.value.has(tag.title),
+    isSelected: notesStore.selectedTagNames.includes(tag.title),
     color: tag.color
   }));
 });
 
 function handleTagClick(tag: { libelleName: string; isSelected: boolean }) {
   // Le composant SidebarTags gère le toggle en interne et émet l'état final souhaité
-  // On applique directement l'état isSelected reçu
+  // On applique directement l'état isSelected reçu dans le store
   if (tag.libelleName === "All Notes") {
     // Si "All Notes" est cliqué, désélectionner tous les tags
-    selectedTags.value.clear();
+    notesStore.clearSelectedTags();
   } else {
-    // Appliquer directement l'état souhaité
-    if (tag.isSelected) {
-      selectedTags.value.add(tag.libelleName);
-    } else {
-      selectedTags.value.delete(tag.libelleName);
-    }
+    // Appliquer directement l'état souhaité dans le store
+    notesStore.setTagSelected(tag.libelleName, tag.isSelected);
   }
 }
 
