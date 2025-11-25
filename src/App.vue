@@ -18,15 +18,17 @@ const tagsForSidebar = computed(() => {
 });
 
 function handleTagClick(tag: { libelleName: string; isSelected: boolean }) {
+  // Le composant SidebarTags gère le toggle en interne et émet l'état final souhaité
+  // On applique directement l'état isSelected reçu
   if (tag.libelleName === "All Notes") {
     // Si "All Notes" est cliqué, désélectionner tous les tags
     selectedTags.value.clear();
   } else {
-    // Toggle la sélection du tag
+    // Appliquer directement l'état souhaité
     if (tag.isSelected) {
-      selectedTags.value.delete(tag.libelleName);
-    } else {
       selectedTags.value.add(tag.libelleName);
+    } else {
+      selectedTags.value.delete(tag.libelleName);
     }
   }
 }
