@@ -46,33 +46,37 @@ function onClickArticle(data: any) {
 }
 
 onBeforeMount(async () => {
-  try {
-    const allNotes = await fetchNotes()
-    notesStore.setAllNotes(allNotes)
-  } catch (error) {
-    console.log('API non disponible, utilisation des données de test')
-    // Données de test avec des titres
-    const testNotes = [
-      {
-        frontId: '1',
-        contentMd: '# Ma première note\n\nCeci est le contenu de ma première note avec un titre.',
-        createdAt: '2024-01-01',
-        tagIds: []
-      },
-      {
-        frontId: '2',
-        contentMd: '# Note importante\n\nCette note est très importante pour le projet.',
-        createdAt: '2024-01-02',
-        tagIds: []
-      },
-      {
-        frontId: '3',
-        contentMd: 'Cette note n\'a pas de titre dans le markdown.',
-        createdAt: '2024-01-03',
-        tagIds: []
-      }
-    ]
-    notesStore.setAllNotes(testNotes)
+  // Ne charger les notes depuis l'API que si le store est vide (première visite)
+  // Sinon, on garde les notes restaurées depuis le localStorage
+  if (notesStore.notes.length === 0) {
+    try {
+      const allNotes = await fetchNotes()
+      notesStore.setAllNotes(allNotes)
+    } catch (error) {
+      console.log('API non disponible, utilisation des données de test')
+      // Données de test avec des titres
+      const testNotes = [
+        {
+          frontId: '1',
+          contentMd: '# Ma première note\n\nCeci est le contenu de ma première note avec un titre.',
+          createdAt: '2024-01-01',
+          tagIds: []
+        },
+        {
+          frontId: '2',
+          contentMd: '# Note importante\n\nCette note est très importante pour le projet.',
+          createdAt: '2024-01-02',
+          tagIds: []
+        },
+        {
+          frontId: '3',
+          contentMd: 'Cette note n\'a pas de titre dans le markdown.',
+          createdAt: '2024-01-03',
+          tagIds: []
+        }
+      ]
+      notesStore.setAllNotes(testNotes)
+    }
   }
 })
 
