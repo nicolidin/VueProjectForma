@@ -13,7 +13,7 @@ export const fetchNotes = async (): Promise<NoteType[]> => {
 };
 
 // Fonction pour créer une nouvelle note
-export const createNote = async (note: Omit<NoteType, 'id' | 'createdAt'>): Promise<NoteType> => {
+export const createNote = async (note: Omit<NoteType, 'frontId' | 'createdAt'>): Promise<NoteType> => {
   try {
     const response = await axiosClient.post<NoteType>('/notes', note);
     return response.data;

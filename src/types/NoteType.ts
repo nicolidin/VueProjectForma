@@ -4,17 +4,16 @@ import {merge} from "lodash-es";
 import moment from "moment";
 
 export type NoteType = {
-  id: string;
+  frontId: string;
+  _id?: string; // Optionnel : ObjectId MongoDB (venant du backend après synchronisation)
   contentMd: string;
   createdAt: string;
-  status?: 'active' | 'completed';
-  priority?: 'high' | 'medium' | 'low';
   tagIds: string[];
 }
 
-export function initNote(noteCtr: Omit<NoteType, 'id' | 'createdAt'>): NoteType {
+export function initNote(noteCtr: Omit<NoteType, 'frontId' | 'createdAt'>): NoteType {
   return merge({
-    id: generateRandomUuid(),
+    frontId: generateRandomUuid(),
     createdAt: moment().format("DD/MM/YYYY"),
     tagIds: []
   }, noteCtr)

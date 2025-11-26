@@ -14,11 +14,11 @@ export const useNotesStore = defineStore('notes',
     const selectedTagNames = ref<string[]>([])
 
     const getNoteById = (id: string) => {
-      return computed(() => notes.value.find((item: any) => item.id === id))
+      return computed(() => notes.value.find((item: any) => item.frontId === id))
     }
 
     const getTagById = (id: string) => {
-      return computed(() => tags.value.find((tag: TagType) => tag.id === id))
+      return computed(() => tags.value.find((tag: TagType) => tag.frontId === id))
     }
 
     // Computed pour obtenir les IDs des tags sélectionnés
@@ -29,7 +29,7 @@ export const useNotesStore = defineStore('notes',
       return new Set(
         tags.value
           .filter(tag => selectedTagNames.value.includes(tag.title))
-          .map(tag => tag.id)
+          .map(tag => tag.frontId)
       )
     })
 
@@ -55,7 +55,7 @@ export const useNotesStore = defineStore('notes',
     }
 
     function editNote(id: number, updatedNote: Partial<NoteType>) {
-      const index = notes.value.findIndex((note: any) => note.id === id)
+      const index = notes.value.findIndex((note: any) => note.frontId === id)
       if (index !== -1) {
         notes.value[index] = merge({}, notes.value[index], updatedNote)
       }
@@ -65,9 +65,9 @@ export const useNotesStore = defineStore('notes',
       tags.value = newTags
     }
 
-    function addTag(tag: Omit<TagType, 'id'>) {
+    function addTag(tag: Omit<TagType, 'frontId'>) {
       const newTag: TagType = {
-        id: generateRandomUuid(),
+        frontId: generateRandomUuid(),
         ...tag
       }
       tags.value.push(newTag)
@@ -75,14 +75,14 @@ export const useNotesStore = defineStore('notes',
     }
 
     function editTag(id: string, updatedTag: Partial<TagType>) {
-      const index = tags.value.findIndex((tag: TagType) => tag.id === id)
+      const index = tags.value.findIndex((tag: TagType) => tag.frontId === id)
       if (index !== -1) {
         tags.value[index] = merge({}, tags.value[index], updatedTag)
       }
     }
 
     function deleteTag(id: string) {
-      const index = tags.value.findIndex((tag: TagType) => tag.id === id)
+      const index = tags.value.findIndex((tag: TagType) => tag.frontId === id)
       if (index !== -1) {
         tags.value.splice(index, 1)
       }
