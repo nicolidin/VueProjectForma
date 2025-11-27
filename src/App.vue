@@ -3,9 +3,15 @@ import {Layout} from "vue-lib-exo-corrected";
 import {useNotesStore} from "./stores/notes.ts";
 import {useAuthStore} from "./stores/auth.ts";
 import {computed, onMounted} from "vue";
+import { usePersistence } from "./services/persistence/usePersistence.ts";
 
 const notesStore = useNotesStore();
 const authStore = useAuthStore();
+
+// ─── Initialiser le service de persistance ────────────────────────────────────────
+// Ce service écoute les événements du store et persiste automatiquement via l'API
+// Il est initialisé une seule fois au niveau de l'application
+usePersistence();
 
 // ─── Initialiser l'authentification au démarrage ──────────────────────────────────
 // - Vérifie si un token existe dans localStorage

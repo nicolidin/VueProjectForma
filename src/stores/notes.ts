@@ -4,6 +4,7 @@ import { merge } from 'lodash-es'
 import type {NoteType} from "@/types/NoteType.ts";
 import type {TagType} from "@/types/TagType.ts";
 import {generateRandomUuid} from "vue-lib-exo-corrected";
+import { noteEventBus } from "@/services/persistence/eventBus.ts";
 
 export const useNotesStore = defineStore('notes',
   () => {
@@ -52,12 +53,38 @@ export const useNotesStore = defineStore('notes',
 
     function addNote(note: NoteType) {
       notes.value.push(note)
+      // Émettre un événement pour déclencher la persistance
+      noteEventBus.emit('note:created', { note })
     }
 
-    function editNote(id: number, updatedNote: Partial<NoteType>) {
+    function editNote(id: string, updatedNote: Partial<NoteType>) {
       const index = notes.value.findIndex((note: any) => note.frontId === id)
       if (index !== -1) {
         notes.value[index] = merge({}, notes.value[index], updatedNote)
+        // Émettre un événement pour déclencher la persistance
+        noteEventBus.emit('note:updated', { id, updates: updatedNote })
+      }
+    }
+
+    /**
+     * Synchronise une note avec les données du backend sans émettre d'événement
+     * Utilisé pour mettre à jour le _id MongoDB après persistance
+     * @internal
+     */
+    function syncNote(id: string, updates: Partial<NoteType>) {
+      const index = notes.value.findIndex((note: any) => note.frontId === id)
+      if (index !== -1) {
+        notes.value[index] = merge({}, notes.value[index], updates)
+        // Pas d'émission d'événement pour éviter les boucles de persistance
+      }
+    }
+
+    function deleteNote(id: string) {
+      const index = notes.value.findIndex((note: any) => note.frontId === id)
+      if (index !== -1) {
+        notes.value.splice(index, 1)
+        // Émettre un événement pour déclencher la persistance
+        noteEventBus.emit('note:deleted', { id })
       }
     }
 
@@ -117,6 +144,8 @@ export const useNotesStore = defineStore('notes',
       addNote,
       setAllNotes,
       editNote,
+      syncNote,
+      deleteNote,
       setAllTags,
       addTag,
       editTag,
