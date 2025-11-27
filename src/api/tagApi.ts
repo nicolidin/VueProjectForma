@@ -2,7 +2,8 @@ import type { TagType } from "../types/TagType.ts";
 import { axiosClient } from "./axios.ts";
 
 // ─── Créer un tag ───────────────────────────────────────────────────────────────
-export const createTag = async (tag: Omit<TagType, '_id'> & { userId: string }): Promise<TagType> => {
+// ✅ Plus besoin de passer userId, il vient automatiquement du token JWT
+export const createTag = async (tag: Omit<TagType, '_id' | 'userId'>): Promise<TagType> => {
   try {
     const response = await axiosClient.post<TagType>('/tags', tag);
     return response.data;
@@ -12,13 +13,17 @@ export const createTag = async (tag: Omit<TagType, '_id'> & { userId: string }):
   }
 };
 
-// ─── Récupérer tous les tags d'un utilisateur ──────────────────────────────────
-export const fetchTagsByUser = async (userId: string): Promise<TagType[]> => {
+// ─── Récupérer tous les tags de l'utilisateur connecté ──────────────────────────
+// ✅ Plus besoin de passer userId, le backend utilise celui du token
+export const fetchTagsByUser = async (): Promise<TagType[]> => {
   try {
-    const response = await axiosClient.get<TagType[]>(`/tags/user/${userId}`);
+    // Le backend utilise automatiquement le userId du token JWT
+    // On peut passer n'importe quelle valeur car le backend l'ignore et utilise le userId du token
+    // Mais pour être cohérent avec la route, on passe 'me'
+    const response = await axiosClient.get<TagType[]>('/tags/user/me');
     return response.data;
   } catch (error) {
-    console.error(`Erreur lors de la récupération des tags de l'utilisateur ${userId}:`, error);
+    console.error('Erreur lors de la récupération des tags:', error);
     throw error;
   }
 };

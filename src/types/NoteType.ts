@@ -12,9 +12,14 @@ export type NoteType = {
 }
 
 export function initNote(noteCtr: Omit<NoteType, 'frontId' | 'createdAt'>): NoteType {
+  // ✅ Sécurité : garantir que contentMd est toujours une string
   return merge({
     frontId: generateRandomUuid(),
     createdAt: moment().format("DD/MM/YYYY"),
+    contentMd: '', // Valeur par défaut
     tagIds: []
-  }, noteCtr)
+  }, {
+    ...noteCtr,
+    contentMd: noteCtr.contentMd || '' // S'assurer que contentMd n'est jamais undefined
+  })
 }

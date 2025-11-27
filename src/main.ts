@@ -15,5 +15,16 @@ const lidinAppKit = createLidinAppKit(DEFAULT_VUETIFY_CONFIG)
 const pinia = createPinia()
 pinia.use(piniaPluginPersistedstate)
 
-createApp(App).use(lidinAppKit).use(pinia).use(router).mount('#app')
+const app = createApp(App).use(lidinAppKit).use(pinia).use(router)
+
+// ─── Initialiser l'authentification avant de monter l'app ─────────────────────────
+// - Import du store auth
+// - Appel de initAuth() pour vérifier si un token existe dans localStorage
+// - Si oui, vérifie sa validité et récupère les infos utilisateur
+import { useAuthStore } from './stores/auth';
+const authStore = useAuthStore();
+authStore.initAuth().then(() => {
+  // Une fois l'auth initialisée, monter l'application
+  app.mount('#app');
+});
 

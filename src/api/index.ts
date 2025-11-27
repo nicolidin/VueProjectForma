@@ -3,6 +3,13 @@
 
 export { axiosClient } from './axios.ts';
 
+// Auth API
+export {
+  login,
+  register,
+  getCurrentUser
+} from './authApi.ts';
+
 // Users API
 export {
   createUser,

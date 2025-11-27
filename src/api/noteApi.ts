@@ -2,8 +2,8 @@ import type { NoteType } from "../types/NoteType.ts";
 import { axiosClient } from "./axios.ts";
 
 // ─── Créer une note ──────────────────────────────────────────────────────────────
-export const createNote = async (note: Omit<NoteType, 'frontId' | 'createdAt' | '_id'> & { 
-  userId: string; 
+// ✅ Plus besoin de passer userId, il vient automatiquement du token JWT
+export const createNote = async (note: Omit<NoteType, 'frontId' | 'createdAt' | '_id' | 'userId'> & { 
   tags?: string[]; // Peut être des titles, frontIds (UUID) ou _id MongoDB
 }): Promise<NoteType> => {
   try {
@@ -26,13 +26,16 @@ export const fetchNotes = async (): Promise<NoteType[]> => {
   }
 };
 
-// ─── Récupérer toutes les notes d'un utilisateur ────────────────────────────────
-export const fetchNotesByUser = async (userId: string): Promise<NoteType[]> => {
+// ─── Récupérer toutes les notes de l'utilisateur connecté ────────────────────────
+// ✅ Plus besoin de passer userId, le backend utilise celui du token
+export const fetchNotesByUser = async (): Promise<NoteType[]> => {
   try {
-    const response = await axiosClient.get<NoteType[]>(`/notes/user/${userId}`);
+    // Le backend utilise automatiquement le userId du token JWT
+    // On peut utiliser une route générique car le backend filtre déjà par userId
+    const response = await axiosClient.get<NoteType[]>('/notes');
     return response.data;
   } catch (error) {
-    console.error(`Erreur lors de la récupération des notes de l'utilisateur ${userId}:`, error);
+    console.error('Erreur lors de la récupération des notes:', error);
     throw error;
   }
 };

@@ -5,13 +5,16 @@
  * @returns The combined markdown content with the title
  */
 export const appendContentToTitle = (contentMd: string, title: string): string => {
+  // ✅ Sécurité : gérer le cas où contentMd est undefined ou null
+  const safeContentMd = contentMd || '';
+  
   // If content is empty, just return the title with #
-  if (!contentMd.trim()) {
+  if (!safeContentMd.trim()) {
     return `# ${title}`;
   }
 
   // Append the title with # prefix
-  return `# ${title}\n ${contentMd}`;
+  return `# ${title}\n ${safeContentMd}`;
 };
 
 /**

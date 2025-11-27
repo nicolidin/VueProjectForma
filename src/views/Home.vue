@@ -14,13 +14,15 @@
 
 import { ListNote, NoteCreation} from "vue-lib-exo-corrected";
 import {useNotesStore} from "../stores/notes.ts";
+import {useAuthStore} from "../stores/auth.ts";
 import {onBeforeMount} from "vue";
-import { fetchNotes } from "../api/noteApi.ts";
+import { fetchNotesByUser } from "../api/noteApi.ts";
 import { initNote } from "../types/NoteType.ts";
 import { appendContentToTitle } from "../services/markdownUtils.ts";
 import {useRouter} from "vue-router";
 
 const notesStore = useNotesStore()
+const authStore = useAuthStore()
 const router = useRouter()
 
 
@@ -46,11 +48,18 @@ function onClickArticle(data: any) {
 }
 
 onBeforeMount(async () => {
+  // ✅ Vérifier que l'utilisateur est connecté avant de charger les notes
+  if (!authStore.isAuthenticated) {
+    router.push('/login');
+    return;
+  }
+
   // Ne charger les notes depuis l'API que si le store est vide (première visite)
   // Sinon, on garde les notes restaurées depuis le localStorage
   if (notesStore.notes.length === 0) {
     try {
-      const allNotes = await fetchNotes()
+      // ✅ Utiliser fetchNotesByUser() qui utilise automatiquement le userId du token
+      const allNotes = await fetchNotesByUser()
       notesStore.setAllNotes(allNotes)
     } catch (error) {
       console.log('API non disponible, utilisation des données de test')
