@@ -1,11 +1,10 @@
 // Type pour les utilisateurs
-export interface User {
-  id: string | number
-  name: string
-  email: string
-  role?: string
-  isActive?: boolean
-  avatar?: string
+export type UserType = {
+  _id?: string; // ObjectId MongoDB (venant du backend)
+  nom: string;
+  email: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 
