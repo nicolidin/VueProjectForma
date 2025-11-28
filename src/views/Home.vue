@@ -17,6 +17,7 @@ import {useNotesStore} from "../stores/notes.ts";
 import {useAuthStore} from "../stores/auth.ts";
 import {onBeforeMount} from "vue";
 import { fetchNotesByUser } from "../api/noteApi.ts";
+import { fetchTagsByUser } from "../api/tagApi.ts";
 import { initNote } from "../types/NoteType.ts";
 import { appendContentToTitle } from "../services/markdownUtils.ts";
 import {useRouter} from "vue-router";
@@ -85,6 +86,19 @@ onBeforeMount(async () => {
         }
       ]
       notesStore.setAllNotes(testNotes)
+    }
+  }
+
+  // Ne charger les tags depuis l'API que si le store est vide (première visite)
+  // Sinon, on garde les tags restaurés depuis le localStorage
+  if (notesStore.tags.length === 0) {
+    try {
+      // ✅ Utiliser fetchTagsByUser() qui utilise automatiquement le userId du token
+      const allTags = await fetchTagsByUser()
+      notesStore.setAllTags(allTags)
+    } catch (error) {
+      console.log('API non disponible pour les tags, utilisation d\'un tableau vide')
+      notesStore.setAllTags([])
     }
   }
 })
