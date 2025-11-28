@@ -6,6 +6,7 @@
 
 import type { PersistenceTask } from './types'
 import { TaskPriority } from './types'
+import type { IQueueManager, TaskProcessor } from './IQueueManager'
 
 /**
  * Options de configuration de la queue
@@ -17,16 +18,11 @@ export interface QueueOptions {
 }
 
 /**
- * Callback appelé quand une tâche est traitée
- */
-export type TaskProcessor<T = unknown> = (task: PersistenceTask<T>) => Promise<void>
-
-/**
  * Queue Manager pour gérer les tâches de persistance
  * Traite les tâches séquentiellement (ou avec un parallélisme limité)
  * Gère automatiquement les retries
  */
-export class QueueManager<T = unknown> {
+export class QueueManager<T = unknown> implements IQueueManager<T> {
   private queue: PersistenceTask<T>[] = []
   private processing: Set<string> = new Set()
   private options: Required<QueueOptions>

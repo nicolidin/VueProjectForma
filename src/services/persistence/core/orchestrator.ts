@@ -12,7 +12,7 @@ import type {
 } from './types'
 import { TaskPriority } from './types'
 import type { EventBus } from './eventBus'
-import type { QueueManager } from './queue'
+import type { IQueueManager } from './IQueueManager'
 import { createMetadata, updateMetadataOnSuccess, updateMetadataOnError, updateMetadataOnSyncing } from './metadata'
 
 /**
@@ -29,14 +29,14 @@ export interface OrchestratorOptions {
  */
 export class PersistenceOrchestrator<T = unknown> {
   private eventBus: EventBus<PersistenceEvents<T>>
-  private queue: QueueManager<T>
+  private queue: IQueueManager<T>
   private strategies: Map<string, PersistenceStrategy<T>> = new Map()
   private options: Required<OrchestratorOptions>
   private unsubscribeFunctions: Array<() => void> = []
 
   constructor(
     eventBus: EventBus<PersistenceEvents<T>>,
-    queue: QueueManager<T>,
+    queue: IQueueManager<T>,
     options: OrchestratorOptions = {}
   ) {
     this.eventBus = eventBus
