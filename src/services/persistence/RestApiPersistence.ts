@@ -18,6 +18,7 @@ export class RestApiPersistence implements PersistenceStrategy {
     const tags = note.tagIds.length > 0 ? note.tagIds : undefined
 
     const persistedNote = await createNote({
+      frontId: note.frontId, // ✅ Ajouter le frontId requis par le backend
       contentMd: note.contentMd,
       tags
     })

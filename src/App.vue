@@ -3,7 +3,7 @@ import {Layout} from "vue-lib-exo-corrected";
 import {useNotesStore} from "./stores/notes.ts";
 import {useAuthStore} from "./stores/auth.ts";
 import {computed, onMounted} from "vue";
-import { usePersistence } from "./services/persistence/usePersistence.ts";
+import { usePersistence } from "@/services/persistence";
 
 const notesStore = useNotesStore();
 const authStore = useAuthStore();
@@ -52,9 +52,9 @@ function handleTagCreate(tag: { title: string; color: string }) {
 
 <template>
   <!-- Afficher le Layout seulement si l'utilisateur est connecté -->
-  <Layout 
+  <Layout
     v-if="authStore.isAuthenticated"
-    class="layout" 
+    class="layout"
     :show-tags-sidebar="true"
     :tags="tagsForSidebar"
     @tag-click="handleTagClick"
@@ -62,7 +62,7 @@ function handleTagCreate(tag: { title: string; color: string }) {
   >
     <router-view />
   </Layout>
-  
+
   <!-- Sinon, afficher directement le router-view (pour login/register) -->
   <router-view v-else />
 </template>

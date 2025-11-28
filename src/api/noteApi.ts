@@ -3,7 +3,8 @@ import { axiosClient } from "./axios.ts";
 
 // ─── Créer une note ──────────────────────────────────────────────────────────────
 // ✅ Plus besoin de passer userId, il vient automatiquement du token JWT
-export const createNote = async (note: Omit<NoteType, 'frontId' | 'createdAt' | '_id' | 'userId'> & { 
+export const createNote = async (note: Omit<NoteType, 'createdAt' | '_id' | 'userId'> & { 
+  frontId: string; // ✅ frontId est requis par le backend
   tags?: string[]; // Peut être des titles, frontIds (UUID) ou _id MongoDB
 }): Promise<NoteType> => {
   try {
