@@ -1,44 +1,69 @@
-# Service de Persistance des Notes
+# Service de Persistance Générique
 
 ## Architecture
 
-Ce module implémente une architecture de persistance basée sur les événements, respectant les principes de **Separation of Concerns (SOC)** et permettant une extensibilité maximale.
+Ce module implémente une architecture de persistance générique basée sur **EventBus + QueueManager**, respectant les principes de **Separation of Concerns (SOC)** et permettant une extensibilité maximale pour supporter différentes stratégies (REST, CRDT, décentralisé, etc.).
 
 ### Structure
 
 ```
 persistence/
-├── types.ts              # Interfaces et types TypeScript
-├── eventBus.ts           # Event bus pour la communication découplée
-├── RestApiPersistence.ts # Implémentation REST API (stratégie par défaut)
-├── PersistenceService.ts # Service orchestrateur
-├── usePersistence.ts     # Composable Vue
-└── index.ts              # Exports centralisés
+├── core/
+│   ├── types.ts              # Types génériques + metadata de persistance
+│   ├── metadata.ts           # Helpers pour gérer les métadonnées
+│   ├── eventBus.ts           # EventBus générique et réutilisable
+│   ├── queue.ts              # QueueManager avec séquençage, retry, priorité
+│   ├── orchestrator.ts       # Orchestrateur générique
+│   └── index.ts              # Exports centralisés
+├── strategies/
+│   ├── RestApiStrategy.ts    # Stratégies REST pour notes et tags
+│   └── index.ts              # Exports centralisés
+├── usePersistence.ts         # Composable Vue pour initialisation
+└── index.ts                  # Exports centralisés
 ```
 
 ## Principe de Fonctionnement
 
-### 1. **Event Bus** (`eventBus.ts`)
+### 1. **EventBus** (`core/eventBus.ts`)
 - Système de communication découplé entre le store et les services de persistance
-- Le store émet des événements (`note:created`, `note:updated`, `note:deleted`)
+- Le store émet des événements génériques (`entity:created`, `entity:updated`, `entity:deleted`)
 - Les services de persistance écoutent ces événements
+- Supporte les handlers synchrones et asynchrones
 
-### 2. **Stratégies de Persistance** (`PersistenceStrategy`)
-Interface permettant d'implémenter différentes méthodes :
-- **RestApiPersistence** : Persistance via REST API (implémentation actuelle)
-- **CrdtPersistence** : Persistance via CRDT (futur)
-- **DecentralizedPersistence** : Persistance décentralisée (futur)
-- **HybridPersistence** : Combinaison de plusieurs stratégies (futur)
+### 2. **QueueManager** (`core/queue.ts`)
+- Gère les tâches de persistance de manière séquentielle (ou avec parallélisme limité)
+- Tri par priorité (plus haute priorité en premier)
+- Retry automatique avec délai configurable
+- Gestion des erreurs et échecs définitifs
 
-### 3. **Service Orchestrateur** (`PersistenceService`)
-- Écoute les événements du store
-- Délègue la persistance à la stratégie configurée
-- Gère les erreurs et émet des événements de résultat
+### 3. **PersistenceOrchestrator** (`core/orchestrator.ts`)
+- Écoute les événements du store via EventBus
+- Met les tâches en queue via QueueManager
+- Délègue la persistance à la stratégie configurée selon le type d'entité
+- Gère les métadonnées de persistance (syncStatus, retryCount, etc.)
+- Émet des événements de résultat (`entity:persisted`, `entity:persist-error`, etc.)
 
-### 4. **Composable Vue** (`usePersistence`)
-- Initialise le service de persistance
-- Écoute les événements de persistance pour mettre à jour le store (ex: `_id` MongoDB)
-- Nettoie les ressources lors du démontage
+### 4. **PersistenceStrategy** (`core/types.ts`)
+Interface générique permettant d'implémenter différentes méthodes :
+- **NoteRestApiStrategy** / **TagRestApiStrategy** : Persistance via REST API (implémentation actuelle)
+- **CrdtStrategy** : Persistance via CRDT (futur)
+- **DecentralizedStrategy** : Persistance décentralisée (futur)
+- **HybridStrategy** : Combinaison de plusieurs stratégies (futur)
+
+### 5. **Metadata de Persistance** (`core/metadata.ts`)
+Chaque entité a des métadonnées de persistance :
+- `syncStatus`: État de synchronisation (`pending`, `syncing`, `synced`, `error`, `conflict`)
+- `backendId`: ID du backend (MongoDB `_id`)
+- `lastSyncAt`: Timestamp de la dernière synchronisation
+- `version`: Version pour CRDT/optimistic locking
+- `retryCount`: Nombre de tentatives
+- `maxRetries`: Nombre maximum de tentatives
+- `error`: Dernière erreur rencontrée
+
+### 6. **Composable Vue** (`usePersistence.ts`)
+- Initialise le système de persistance (EventBus, QueueManager, Orchestrator)
+- Enregistre les stratégies pour chaque type d'entité
+- Doit être appelé une seule fois au niveau de l'application
 
 ## Utilisation
 
@@ -46,19 +71,11 @@ Interface permettant d'implémenter différentes méthodes :
 
 ```typescript
 import { usePersistence } from '@/services/persistence'
+import { useNotesStore } from '@/stores/notes'
 
-// Dans App.vue ou un composant racine
-usePersistence() // Utilise RestApiPersistence par défaut
-```
-
-### Utilisation avec une stratégie personnalisée
-
-```typescript
-import { usePersistence } from '@/services/persistence'
-import { RestApiPersistence } from '@/services/persistence'
-
-const customStrategy = new RestApiPersistence()
-usePersistence(customStrategy)
+// Dans App.vue
+usePersistence() // Initialise EventBus, QueueManager et Orchestrator
+notesStore.initPersistenceListeners() // Le store écoute les événements de persistance
 ```
 
 ### Émission d'événements depuis le store
@@ -69,7 +86,12 @@ Le store émet automatiquement des événements lors des modifications :
 // Dans le store
 function addNote(note: NoteType) {
   notes.value.push(note)
-  noteEventBus.emit('note:created', { note }) // ✅ Émission automatique
+  eventBus.emit('entity:created', { entityType: 'note', data: note })
+}
+
+function addTag(tag: TagType) {
+  tags.value.push(tag)
+  eventBus.emit('entity:created', { entityType: 'tag', data: tag })
 }
 ```
 
@@ -80,105 +102,108 @@ function addNote(note: NoteType) {
 │   Store     │
 │  (Pinia)    │
 └──────┬──────┘
-       │ émet 'note:created'
+       │ émet 'entity:created'
        ▼
 ┌─────────────┐
 │ Event Bus   │
 └──────┬──────┘
        │ écoute
        ▼
-┌─────────────┐      ┌──────────────────┐
-│Persistence  │─────▶│ RestApiPersistence│
-│  Service    │      │  (ou autre)       │
-└─────────────┘      └──────────────────┘
-       │
-       │ émet 'note:persisted'
+┌─────────────┐
+│ Orchestrator│
+└──────┬──────┘
+       │ enqueue
        ▼
 ┌─────────────┐
-│  Composable │
-│  (met à jour│
-│   le store) │
+│QueueManager │ (séquentiel, retry, priorité)
+└──────┬──────┘
+       │ process
+       ▼
+┌─────────────┐      ┌──────────────────┐
+│ Orchestrator│─────▶│ RestApiStrategy  │
+│             │      │ (ou autre)       │
+└──────┬──────┘      └──────────────────┘
+       │ émet 'entity:persisted'
+       ▼
+┌─────────────┐
+│ Event Bus   │
+└──────┬──────┘
+       │ écoute
+       ▼
+┌─────────────┐
+│   Store     │ (met à jour _id MongoDB)
 └─────────────┘
 ```
 
 ## Événements
 
 ### Émis par le Store
-- `note:created` : Une note a été créée localement
-- `note:updated` : Une note a été mise à jour localement
-- `note:deleted` : Une note a été supprimée localement
+- `entity:created` : Une entité a été créée localement
+- `entity:updated` : Une entité a été mise à jour localement
+- `entity:deleted` : Une entité a été supprimée localement
 
-### Émis par le Service de Persistance
-- `note:persisted` : Une note a été persistée avec succès (contient `original` et `persisted`)
-- `note:persist-error` : Erreur lors de la persistance d'une création
-- `note:update-error` : Erreur lors de la persistance d'une mise à jour
-- `note:delete-error` : Erreur lors de la persistance d'une suppression
+### Émis par le Système de Persistance
+- `entity:persisted` : Une entité a été persistée avec succès
+- `entity:persist-error` : Erreur lors de la persistance d'une création
+- `entity:update-error` : Erreur lors de la persistance d'une mise à jour
+- `entity:delete-error` : Erreur lors de la persistance d'une suppression
 
-## Extension Future
-
-### Ajouter une nouvelle stratégie de persistance
-
-1. Implémenter l'interface `PersistenceStrategy` :
-
-```typescript
-import type { PersistenceStrategy } from './types'
-
-export class CrdtPersistence implements PersistenceStrategy {
-  async persistCreate(note: NoteType): Promise<NoteType> {
-    // Implémentation CRDT
-  }
-  
-  async persistUpdate(id: string, updates: Partial<NoteType>): Promise<NoteType> {
-    // Implémentation CRDT
-  }
-  
-  async persistDelete(id: string): Promise<void> {
-    // Implémentation CRDT
-  }
-}
-```
-
-2. Utiliser la nouvelle stratégie :
-
-```typescript
-import { usePersistence } from '@/services/persistence'
-import { CrdtPersistence } from '@/services/persistence/CrdtPersistence'
-
-usePersistence(new CrdtPersistence())
-```
-
-### Stratégie hybride (exemple)
-
-```typescript
-export class HybridPersistence implements PersistenceStrategy {
-  constructor(
-    private restApi: RestApiPersistence,
-    private crdt: CrdtPersistence
-  ) {}
-  
-  async persistCreate(note: NoteType): Promise<NoteType> {
-    // Persister dans les deux systèmes
-    const [restResult, crdtResult] = await Promise.all([
-      this.restApi.persistCreate(note),
-      this.crdt.persistCreate(note)
-    ])
-    return restResult // Retourner le résultat principal
-  }
-}
-```
+### Émis par la Queue
+- `queue:task-enqueued` : Une tâche a été mise en queue
+- `queue:task-processing` : Une tâche est en cours de traitement
+- `queue:task-completed` : Une tâche a été complétée avec succès
+- `queue:task-failed` : Une tâche a échoué définitivement
 
 ## Avantages de cette Architecture
 
-1. **Separation of Concerns** : Le store gère l'état, la persistance est isolée
-2. **Extensibilité** : Ajout de nouvelles stratégies sans modifier le code existant
-3. **Testabilité** : Chaque composant est testable indépendamment
-4. **Flexibilité** : Changement de stratégie à la volée
-5. **Découplage** : Communication via événements, pas de dépendances directes
+1. **SOC Maximale** :
+   - Store : Gère uniquement l'état local
+   - EventBus : Communication découplée
+   - QueueManager : Gestion séquentielle et retry
+   - Orchestrator : Orchestration sans connaître les détails
+   - Strategy : Implémentation pure (REST, CRDT, etc.)
 
-## Notes Importantes
+2. **Générique** :
+   - Supporte n'importe quel type d'entité (notes, tags, etc.)
+   - Facile d'ajouter de nouveaux types d'entités
+   - Stratégies interchangeables
 
-- La persistance est **asynchrone** et **non-bloquante**
-- Les erreurs sont loggées mais n'empêchent pas l'utilisation de l'application
-- Le store est mis à jour **optimistiquement** (avant la persistance)
-- Les données persistées (ex: `_id` MongoDB) sont synchronisées dans le store après persistance
+3. **Robuste** :
+   - Retry automatique
+   - Gestion des erreurs
+   - Métadonnées de persistance pour tracking
+   - Support offline (queue persistée, futur)
 
+4. **Extensible** :
+   - Facile d'ajouter de nouvelles stratégies (CRDT, décentralisé)
+   - Support pour résolution de conflits (futur)
+   - Support pour synchronisation multi-device (futur)
+
+## Ajout d'un Nouveau Type d'Entité
+
+1. Créer une stratégie dans `strategies/` :
+```typescript
+export class MyEntityRestApiStrategy implements PersistenceStrategy<MyEntityType> {
+  async persistCreate(entity: PersistableEntity<MyEntityType>): Promise<...> { ... }
+  async persistUpdate(entity: PersistableEntity<MyEntityType>): Promise<...> { ... }
+  async persistDelete(id: string, entityType: string): Promise<void> { ... }
+}
+```
+
+2. Enregistrer la stratégie dans `usePersistence.ts` :
+```typescript
+orchestrator.registerStrategy('myEntity', new MyEntityRestApiStrategy())
+```
+
+3. Émettre des événements depuis le store :
+```typescript
+eventBus.emit('entity:created', { entityType: 'myEntity', data: myEntity })
+```
+
+## Support Futur
+
+- **CRDT Strategy** : Pour synchronisation multi-device avec résolution automatique de conflits
+- **Decentralized Strategy** : Pour persistance P2P
+- **Queue Persistée** : Pour support offline complet
+- **Synchronisation Incrémentale** : Basée sur `lastSyncAt`
+- **Optimistic Locking** : Basé sur `version` dans les métadonnées

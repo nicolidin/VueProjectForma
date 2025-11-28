@@ -13,6 +13,10 @@ const authStore = useAuthStore();
 // Il est initialisé une seule fois au niveau de l'application
 usePersistence();
 
+// ─── Initialiser les listeners de persistance dans le store ────────────────────────
+// Le store écoute les événements de persistance pour mettre à jour les _id MongoDB
+notesStore.initPersistenceListeners();
+
 // ─── Initialiser l'authentification au démarrage ──────────────────────────────────
 // - Vérifie si un token existe dans localStorage
 // - Si oui, vérifie s'il est valide en appelant l'API

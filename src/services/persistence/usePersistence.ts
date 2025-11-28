@@ -1,56 +1,63 @@
+/**
+ * Composable Vue pour gérer la persistance générique
+ * Initialise EventBus, QueueManager et Orchestrator
+ * Écoute les événements de persistance pour mettre à jour le store
+ */
+
 import { onUnmounted } from 'vue'
-import { PersistenceService } from './PersistenceService'
-import { RestApiPersistence } from './RestApiPersistence'
-import { noteEventBus } from './eventBus'
-import { useNotesStore } from '@/stores/notes'
+import { EventBus } from './core/eventBus'
+import { QueueManager } from './core/queue'
+import { PersistenceOrchestrator } from './core/orchestrator'
+import type { PersistenceEvents } from './core/types'
+import { NoteRestApiStrategy, TagRestApiStrategy } from './strategies'
+import type { NoteType } from '@/types/NoteType'
+import type { TagType } from '@/types/TagType'
 
 /**
- * Composable Vue pour gérer la persistance des notes
- * 
- * Ce composable :
- * - Initialise le service de persistance avec une stratégie (REST par défaut)
- * - Écoute les événements de persistance pour mettre à jour le store si nécessaire
- * - Nettoie les ressources lors du démontage du composant
- * 
- * @param strategy - Optionnel : stratégie de persistance personnalisée (par défaut: RestApiPersistence)
- * @returns Le service de persistance et des helpers
+ * Instance globale de l'event bus pour la persistance
  */
-export function usePersistence(strategy?: RestApiPersistence) {
-  const notesStore = useNotesStore()
-  const persistenceStrategy = strategy || new RestApiPersistence()
-  const persistenceService = new PersistenceService(persistenceStrategy)
+export const persistenceEventBus = new EventBus<PersistenceEvents>()
 
-  // Écouter les événements de persistance réussie pour mettre à jour le store
-  // (ex: mettre à jour le _id MongoDB après création)
-  const unsubscribePersisted = noteEventBus.on('note:persisted', ({ original, persisted }) => {
-    // Si la note a été créée et qu'on a maintenant un _id du backend
-    if (original.frontId && persisted._id && !original._id) {
-      // Utiliser syncNote pour éviter d'émettre un nouvel événement de persistance
-      notesStore.syncNote(original.frontId, {
-        _id: persisted._id,
-        // Mettre à jour aussi les tagIds si le backend les a transformés
-        tagIds: persisted.tagIds || original.tagIds
-      })
-    }
-  })
+/**
+ * Instance globale de la queue pour la persistance
+ */
+export const persistenceQueue = new QueueManager()
 
-  // Écouter les erreurs de persistance (optionnel : pour afficher des notifications)
-  const unsubscribeError = noteEventBus.on('note:persist-error', ({ note, error }) => {
-    console.warn('Erreur de persistance pour la note:', note.frontId, error)
-    // Ici, on pourrait ajouter une notification à l'utilisateur
-    // ou mettre en queue pour retry plus tard
-  })
+/**
+ * Instance globale de l'orchestrateur
+ */
+let orchestrator: PersistenceOrchestrator | null = null
 
-  // Nettoyage lors du démontage
+/**
+ * Composable pour initialiser le système de persistance
+ * Doit être appelé une seule fois au niveau de l'application (App.vue)
+ */
+export function usePersistence() {
+  // Créer l'orchestrateur si pas déjà créé
+  if (!orchestrator) {
+    orchestrator = new PersistenceOrchestrator(persistenceEventBus, persistenceQueue)
+
+    // Enregistrer les stratégies pour chaque type d'entité
+    orchestrator.registerStrategy('note', new NoteRestApiStrategy())
+    orchestrator.registerStrategy('tag', new TagRestApiStrategy())
+
+
+  // Nettoyage lors du démontage (si nécessaire)
   onUnmounted(() => {
-    persistenceService.destroy()
-    unsubscribePersisted()
-    unsubscribeError()
+    // Ne pas détruire l'orchestrateur car il est global
+    // Il sera détruit quand l'app se ferme
   })
 
   return {
-    persistenceService,
-    noteEventBus
+    eventBus: persistenceEventBus,
+    queue: persistenceQueue,
+    orchestrator
   }
 }
 
+/**
+ * Retourne l'instance de l'event bus (pour utilisation dans les stores)
+ */
+export function getPersistenceEventBus(): EventBus<PersistenceEvents> {
+  return persistenceEventBus
+}

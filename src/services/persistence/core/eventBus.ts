@@ -1,15 +1,16 @@
-import type { PersistenceEvents } from './types'
+/**
+ * Event Bus générique et réutilisable
+ * Code pur, sans dépendances externes
+ * Respecte le principe SOC en étant complètement découplé
+ */
+
+type EventHandler<T> = (payload: T) => void | Promise<void>
 
 /**
- * Type pour les handlers d'événements
+ * Event Bus simple et léger pour la communication découplée
+ * Supporte les handlers synchrones et asynchrones
  */
-type EventHandler<T> = (payload: T) => void
-
-/**
- * Event Bus simple et léger pour la communication entre le store et les services de persistance
- * Respecte le principe SOC en découplant l'émission d'événements de leur traitement
- */
-class EventBus<T extends Record<string, unknown>> {
+export class EventBus<T extends Record<string, unknown>> {
   private handlers: Map<keyof T, Set<EventHandler<any>>> = new Map()
 
   /**
@@ -46,7 +47,14 @@ class EventBus<T extends Record<string, unknown>> {
     if (handlers) {
       handlers.forEach(handler => {
         try {
-          handler(payload)
+          const result = handler(payload)
+          // Si le handler retourne une Promise, on la catch silencieusement
+          // pour éviter les erreurs non gérées
+          if (result instanceof Promise) {
+            result.catch(error => {
+              console.error(`Error in async event handler for ${String(event)}:`, error)
+            })
+          }
         } catch (error) {
           console.error(`Error in event handler for ${String(event)}:`, error)
         }
@@ -65,10 +73,34 @@ class EventBus<T extends Record<string, unknown>> {
       this.handlers.clear()
     }
   }
-}
 
-/**
- * Instance globale de l'event bus pour les événements de persistance
- */
-export const noteEventBus = new EventBus<PersistenceEvents>()
+  /**
+   * Retire un listener spécifique
+   * @param event - Le nom de l'événement
+   * @param handler - Le handler à retirer
+   */
+  removeListener<K extends keyof T>(event: K, handler: EventHandler<T[K]>): void {
+    const handlers = this.handlers.get(event)
+    if (handlers) {
+      handlers.delete(handler)
+      if (handlers.size === 0) {
+        this.handlers.delete(event)
+      }
+    }
+  }
+
+  /**
+   * Retourne le nombre de listeners pour un événement
+   */
+  listenerCount<K extends keyof T>(event: K): number {
+    return this.handlers.get(event)?.size || 0
+  }
+
+  /**
+   * Retourne tous les événements qui ont des listeners
+   */
+  eventNames(): Array<keyof T> {
+    return Array.from(this.handlers.keys())
+  }
+}
 

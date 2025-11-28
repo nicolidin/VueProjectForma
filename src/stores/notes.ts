@@ -4,7 +4,7 @@ import { merge } from 'lodash-es'
 import type {NoteType} from "@/types/NoteType.ts";
 import type {TagType} from "@/types/TagType.ts";
 import {generateRandomUuid} from "vue-lib-exo-corrected";
-import { noteEventBus } from "@/services/persistence/eventBus.ts";
+import { getPersistenceEventBus } from "@/services/persistence/usePersistence.ts";
 
 export const useNotesStore = defineStore('notes',
   () => {
@@ -13,6 +13,9 @@ export const useNotesStore = defineStore('notes',
     // État pour gérer la sélection des tags (par nom de tag)
     // Utilisation d'un tableau au lieu d'un Set pour la réactivité Vue
     const selectedTagNames = ref<string[]>([])
+
+    // Event bus pour la persistance
+    const eventBus = getPersistenceEventBus()
 
     const getNoteById = (id: string) => {
       return computed(() => notes.value.find((item: any) => item.frontId === id))
@@ -54,7 +57,7 @@ export const useNotesStore = defineStore('notes',
     function addNote(note: NoteType) {
       notes.value.push(note)
       // Émettre un événement pour déclencher la persistance
-      noteEventBus.emit('note:created', { note })
+      eventBus.emit('entity:created', { entityType: 'note', data: note })
     }
 
     function editNote(id: string, updatedNote: Partial<NoteType>) {
@@ -62,7 +65,7 @@ export const useNotesStore = defineStore('notes',
       if (index !== -1) {
         notes.value[index] = merge({}, notes.value[index], updatedNote)
         // Émettre un événement pour déclencher la persistance
-        noteEventBus.emit('note:updated', { id, updates: updatedNote })
+        eventBus.emit('entity:updated', { entityType: 'note', id, updates: updatedNote })
       }
     }
 
@@ -79,12 +82,25 @@ export const useNotesStore = defineStore('notes',
       }
     }
 
+    /**
+     * Synchronise un tag avec les données du backend sans émettre d'événement
+     * Utilisé pour mettre à jour le _id MongoDB après persistance
+     * @internal
+     */
+    function syncTag(id: string, updates: Partial<TagType>) {
+      const index = tags.value.findIndex((tag: TagType) => tag.frontId === id)
+      if (index !== -1) {
+        tags.value[index] = merge({}, tags.value[index], updates)
+        // Pas d'émission d'événement pour éviter les boucles de persistance
+      }
+    }
+
     function deleteNote(id: string) {
       const index = notes.value.findIndex((note: any) => note.frontId === id)
       if (index !== -1) {
         notes.value.splice(index, 1)
         // Émettre un événement pour déclencher la persistance
-        noteEventBus.emit('note:deleted', { id })
+        eventBus.emit('entity:deleted', { entityType: 'note', id })
       }
     }
 
@@ -98,6 +114,8 @@ export const useNotesStore = defineStore('notes',
         ...tag
       }
       tags.value.push(newTag)
+      // Émettre un événement pour déclencher la persistance
+      eventBus.emit('entity:created', { entityType: 'tag', data: newTag })
       return newTag
     }
 
@@ -105,6 +123,8 @@ export const useNotesStore = defineStore('notes',
       const index = tags.value.findIndex((tag: TagType) => tag.frontId === id)
       if (index !== -1) {
         tags.value[index] = merge({}, tags.value[index], updatedTag)
+        // Émettre un événement pour déclencher la persistance
+        eventBus.emit('entity:updated', { entityType: 'tag', id, updates: updatedTag })
       }
     }
 
@@ -112,6 +132,8 @@ export const useNotesStore = defineStore('notes',
       const index = tags.value.findIndex((tag: TagType) => tag.frontId === id)
       if (index !== -1) {
         tags.value.splice(index, 1)
+        // Émettre un événement pour déclencher la persistance
+        eventBus.emit('entity:deleted', { entityType: 'tag', id })
       }
     }
 
@@ -133,6 +155,56 @@ export const useNotesStore = defineStore('notes',
       selectedTagNames.value.length = 0
     }
 
+    /**
+     * Initialise les listeners pour les événements de persistance
+     * Doit être appelé une fois depuis App.vue après l'initialisation de usePersistence
+     */
+    function initPersistenceListeners() {
+      // Écouter les événements de persistance réussie
+      eventBus.on('entity:persisted', ({ entityType, original, persisted }) => {
+        if (entityType === 'note') {
+          const note = persisted.data as NoteType
+          const originalNote = original.data as NoteType
+          
+          // Si la note a été créée et qu'on a maintenant un _id du backend
+          if (originalNote.frontId && note._id && !originalNote._id) {
+            syncNote(originalNote.frontId, {
+              _id: note._id,
+              // Mettre à jour aussi les tagIds si le backend les a transformés
+              tagIds: note.tagIds || originalNote.tagIds
+            })
+          } else if (note._id) {
+            // Mise à jour d'une note existante
+            syncNote(note.frontId, {
+              _id: note._id,
+              tagIds: note.tagIds
+            })
+          }
+        } else if (entityType === 'tag') {
+          const tag = persisted.data as TagType
+          const originalTag = original.data as TagType
+          
+          // Si le tag a été créé et qu'on a maintenant un _id du backend
+          if (originalTag.frontId && tag._id && !originalTag._id) {
+            syncTag(originalTag.frontId, {
+              _id: tag._id
+            })
+          } else if (tag._id) {
+            // Mise à jour d'un tag existant
+            syncTag(tag.frontId, {
+              _id: tag._id
+            })
+          }
+        }
+      })
+
+      // Écouter les erreurs de persistance (optionnel : pour afficher des notifications)
+      eventBus.on('entity:persist-error', ({ entityType, task, error }) => {
+        console.warn(`Erreur de persistance pour ${entityType}:`, task.payload.metadata.frontId, error)
+        // Ici, on pourrait ajouter une notification à l'utilisateur
+      })
+    }
+
     return {
       notes,
       tags,
@@ -149,9 +221,11 @@ export const useNotesStore = defineStore('notes',
       setAllTags,
       addTag,
       editTag,
+      syncTag,
       deleteTag,
       setTagSelected,
-      clearSelectedTags
+      clearSelectedTags,
+      initPersistenceListeners
     }
   },{
     persist: {
