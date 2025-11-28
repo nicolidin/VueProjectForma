@@ -17,6 +17,29 @@ export interface PersistedQueueOptions {
   retryDelay?: number // Délai en ms avant retry (défaut: 1000)
   maxQueueSize?: number // Taille max de la queue (défaut: Infinity)
   autoStart?: boolean // Démarrer automatiquement le traitement au démarrage (défaut: true)
+  exponentialBackoffBase?: number // Base pour le backoff exponentiel après maxRetries (défaut: 30000 = 30s)
+}
+
+/**
+ * Calcule le délai de retry avec backoff exponentiel
+ * - Pour les 3 premières tentatives : délai normal (retryDelay)
+ * - Après 3 tentatives : backoff exponentiel (30s, 60s, 120s...)
+ * @private
+ */
+function calculateRetryDelay(
+  retryCount: number,
+  maxRetries: number,
+  baseRetryDelay: number,
+  exponentialBackoffBase: number
+): number {
+  if (retryCount <= maxRetries) {
+    // Retries rapides pour les premières tentatives
+    return baseRetryDelay
+  }
+  
+  // Backoff exponentiel après maxRetries
+  const exponentialAttempts = retryCount - maxRetries
+  return exponentialBackoffBase * Math.pow(2, exponentialAttempts - 1)
 }
 
 /**
@@ -35,7 +58,8 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
       maxConcurrent: options.maxConcurrent ?? 1,
       retryDelay: options.retryDelay ?? 1000,
       maxQueueSize: options.maxQueueSize ?? Infinity,
-      autoStart: options.autoStart ?? true
+      autoStart: options.autoStart ?? true,
+      exponentialBackoffBase: options.exponentialBackoffBase ?? 30000
     }
 
     // Ne pas appeler usePersistenceQueueStore() dans le constructeur
@@ -166,14 +190,15 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
       const tasksToProcess: PersistenceTask<T>[] = []
 
       // Prendre jusqu'à maxConcurrent tâches
+      // Ne pas retirer de la queue maintenant : on le fera seulement après succès
       for (const task of sortedTasks) {
         if (
           tasksToProcess.length < this.options.maxConcurrent &&
           !this.processing.has(task.id) &&
           this.processing.size < this.options.maxConcurrent
         ) {
-          // Retirer de la queue avant de traiter
-          queueStore.dequeue(task.id)
+          // Ne pas retirer de la queue : la tâche reste dans pendingTasks
+          // Elle sera retirée seulement après succès dans processTask
           tasksToProcess.push(task)
         }
       }
@@ -195,6 +220,7 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
 
   /**
    * Traite une tâche
+   * Offline-first : la tâche reste dans la queue jusqu'à succès
    * @private
    */
   private async processTask(task: PersistenceTask<T>): Promise<void> {
@@ -203,25 +229,43 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
     }
 
     this.processing.add(task.id)
+    const queueStore = this.getQueueStore()
 
     try {
       await this.processor(task)
-      // Tâche réussie : elle a déjà été retirée de la queue dans startProcessing
+      
+      // ✅ Tâche réussie : maintenant on peut la retirer de la queue
+      queueStore.dequeue(task.id)
     } catch (error) {
-      // Si la tâche peut être retentée, on la remet en queue (persistée)
-      if (task.retryCount < task.maxRetries) {
-        task.retryCount++
-        const queueStore = this.getQueueStore()
-        
-        // Attendre avant de retenter
-        await new Promise(resolve => setTimeout(resolve, this.options.retryDelay))
-        
-        // Remettre en queue (persistée) avec le retryCount mis à jour
+      // ❌ Tâche échouée : toujours remettre en queue avec backoff exponentiel
+      // Offline-first : on ne supprime jamais une tâche, on la retente indéfiniment
+      task.retryCount++
+      
+      // Calculer le délai avec backoff exponentiel
+      const delay = calculateRetryDelay(
+        task.retryCount,
+        task.maxRetries,
+        this.options.retryDelay,
+        this.options.exponentialBackoffBase
+      )
+      
+      // Log pour les retries après maxRetries (backoff exponentiel)
+      if (task.retryCount > task.maxRetries) {
+        console.log(
+          `[PersistedQueueManager] Task ${task.id} retry ${task.retryCount} after ${delay}ms (exponential backoff)`
+        )
+      }
+      
+      // Attendre avant de retenter
+      await new Promise(resolve => setTimeout(resolve, delay))
+      
+      // Remettre en queue (persistée) avec le retryCount mis à jour
+      // La tâche est déjà dans la queue, mais on la met à jour pour persister le retryCount
+      queueStore.updateTask(task.id, { retryCount: task.retryCount })
+      
+      // Si la tâche n'est plus dans la queue (cas edge), la remettre
+      if (!queueStore.getTaskById(task.id)) {
         queueStore.enqueue(task)
-      } else {
-        // Tâche échouée définitivement
-        console.error(`Task ${task.id} failed after ${task.maxRetries} retries:`, error)
-        // La tâche a déjà été retirée de la queue, pas besoin de la retirer
       }
     } finally {
       this.processing.delete(task.id)

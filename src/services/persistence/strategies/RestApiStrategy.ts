@@ -15,12 +15,12 @@ import type { TagType } from '@/types/TagType'
 export class NoteRestApiStrategy implements PersistenceStrategy<NoteType> {
   async persistCreate(entity: PersistableEntity<NoteType>): Promise<PersistableEntity<NoteType>> {
     const note = entity.data
-    // createNote attend tagIds (de NoteType) mais accepte aussi tags en option pour le backend
+    // createNote attend tagsFrontId (de NoteType) mais accepte aussi tags en option pour le backend
     const persistedNote = await createNote({
       frontId: note.frontId,
       contentMd: note.contentMd,
-      tagIds: note.tagIds,
-      tags: note.tagIds.length > 0 ? note.tagIds : undefined
+      tagsFrontId: note.tagsFrontId,
+      tags: note.tagsFrontId.length > 0 ? note.tagsFrontId : undefined
     })
 
     return {
@@ -47,8 +47,8 @@ export class NoteRestApiStrategy implements PersistenceStrategy<NoteType> {
       apiUpdates.contentMd = updates.contentMd
     }
 
-    if (updates.tagIds !== undefined) {
-      apiUpdates.tags = updates.tagIds.length > 0 ? updates.tagIds : []
+    if (updates.tagsFrontId !== undefined) {
+      apiUpdates.tags = updates.tagsFrontId.length > 0 ? updates.tagsFrontId : []
     }
 
     const updatedNote = await updateNote(id, apiUpdates)

@@ -8,7 +8,7 @@ export type NoteType = {
   _id?: string; // Optionnel : ObjectId MongoDB (venant du backend après synchronisation)
   contentMd: string;
   createdAt: string;
-  tagIds: string[];
+  tagsFrontId: string[]; // ✅ Sémantique : tagsFrontId sont TOUJOURS des frontId (jamais des _id MongoDB)
 }
 
 export function initNote(noteCtr: Omit<NoteType, 'frontId' | 'createdAt'>): NoteType {
@@ -17,7 +17,7 @@ export function initNote(noteCtr: Omit<NoteType, 'frontId' | 'createdAt'>): Note
     frontId: generateRandomUuid(),
     createdAt: moment().format("DD/MM/YYYY"),
     contentMd: '', // Valeur par défaut
-    tagIds: []
+    tagsFrontId: []
   }, {
     ...noteCtr,
     contentMd: noteCtr.contentMd || '' // S'assurer que contentMd n'est jamais undefined

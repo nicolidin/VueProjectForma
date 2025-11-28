@@ -46,7 +46,7 @@ export const useNotesStore = defineStore('notes',
       
       // Filtrer les notes qui ont au moins un des tags sélectionnés
       return notes.value.filter((note: NoteType) => {
-        return note.tagIds.some(tagId => selectedTagIds.value!.has(tagId))
+        return note.tagsFrontId.some(tagFrontId => selectedTagIds.value!.has(tagFrontId))
       })
     })
 
@@ -170,14 +170,14 @@ export const useNotesStore = defineStore('notes',
           if (originalNote.frontId && note._id && !originalNote._id) {
             syncNote(originalNote.frontId, {
               _id: note._id,
-              // Mettre à jour aussi les tagIds si le backend les a transformés
-              tagIds: note.tagIds || originalNote.tagIds
+              // Mettre à jour aussi les tagsFrontId si le backend les a transformés
+              tagsFrontId: note.tagsFrontId || originalNote.tagsFrontId
             })
           } else if (note._id) {
             // Mise à jour d'une note existante
             syncNote(note.frontId, {
               _id: note._id,
-              tagIds: note.tagIds
+              tagsFrontId: note.tagsFrontId
             })
           }
         } else if (entityType === 'tag') {
