@@ -47,7 +47,8 @@ export class PersistenceOrchestrator<T = unknown> {
     }
 
     this.setupEventListeners()
-    this.setupQueueProcessor()
+    // Ne pas appeler setupQueueProcessor() ici pour éviter la race condition
+    // Il sera appelé explicitement via initializeProcessor() après l'enregistrement des stratégies
   }
 
   /**
@@ -58,22 +59,36 @@ export class PersistenceOrchestrator<T = unknown> {
   }
 
   /**
+   * Initialise le processeur de queue
+   * Doit être appelé après l'enregistrement des stratégies pour éviter les race conditions
+   */
+  initializeProcessor(): void {
+    this.setupQueueProcessor()
+  }
+
+  /**
    * Configure les listeners pour les événements du store
    * @private
    */
   private setupEventListeners(): void {
     // Écouter la création d'entités
     const unsubscribeCreate = this.eventBus.on('entity:created', ({ entityType, data }) => {
+      console.log('[PersistenceOrchestrator] Received entity:created event:', { 
+        entityType, 
+        frontId: (data as any).frontId 
+      })
       this.enqueueCreate(entityType, data)
     })
 
     // Écouter la mise à jour d'entités
     const unsubscribeUpdate = this.eventBus.on('entity:updated', ({ entityType, id, updates }) => {
+      console.log('[PersistenceOrchestrator] Received entity:updated event:', { entityType, id })
       this.enqueueUpdate(entityType, id, updates)
     })
 
     // Écouter la suppression d'entités
     const unsubscribeDelete = this.eventBus.on('entity:deleted', ({ entityType, id }) => {
+      console.log('[PersistenceOrchestrator] Received entity:deleted event:', { entityType, id })
       this.enqueueDelete(entityType, id)
     })
 
@@ -109,8 +124,17 @@ export class PersistenceOrchestrator<T = unknown> {
       maxRetries: this.options.defaultMaxRetries
     }
 
+    console.log('[PersistenceOrchestrator] Enqueuing create task:', {
+      taskId: task.id,
+      entityType: task.entityType,
+      frontId: metadata.frontId,
+      priority: task.priority
+    })
+    
     this.queue.enqueue(task)
     this.eventBus.emit('queue:task-enqueued', { task })
+    
+    console.log('[PersistenceOrchestrator] Task enqueued, queue size:', this.queue.size())
   }
 
   /**

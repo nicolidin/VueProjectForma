@@ -55,9 +55,14 @@ export const useNotesStore = defineStore('notes',
     }
 
     function addNote(note: NoteType) {
+      console.log('[NotesStore] addNote called:', { 
+        frontId: note.frontId, 
+        contentMd: note.contentMd?.substring(0, 50) + '...' 
+      })
       notes.value.push(note)
       // Émettre un événement pour déclencher la persistance
       eventBus.emit('entity:created', { entityType: 'note', data: note })
+      console.log('[NotesStore] entity:created event emitted for note:', note.frontId)
     }
 
     function editNote(id: string, updatedNote: Partial<NoteType>) {

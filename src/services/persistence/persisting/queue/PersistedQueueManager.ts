@@ -77,14 +77,15 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
 
   /**
    * Définit le processeur de tâches
+   * Note: Ne démarre pas automatiquement le traitement pour éviter les race conditions
+   * Le traitement sera démarré explicitement via restart() après l'initialisation complète
    */
   setProcessor(processor: TaskProcessor<T>): void {
+    console.log('[PersistedQueueManager] setProcessor called')
     this.processor = processor
-    // Si on a des tâches en attente et qu'on vient de définir le processeur, démarrer
     const queueStore = this.getQueueStore()
-    if (queueStore.queueSize > 0 && !this.isRunning) {
-      this.startProcessing()
-    }
+    console.log('[PersistedQueueManager] Processor set, queue size:', queueStore.queueSize, 'isRunning:', this.isRunning)
+    // Ne pas démarrer automatiquement ici - sera fait explicitement via restart() après init complète
   }
 
   /**
@@ -109,12 +110,28 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
       throw new Error(`Queue is full (max size: ${this.options.maxQueueSize})`)
     }
 
+    console.log('[PersistedQueueManager] enqueue called:', {
+      taskId: task.id,
+      entityType: task.entityType,
+      operation: task.operation,
+      currentQueueSize: queueStore.queueSize,
+      hasProcessor: !!this.processor,
+      isRunning: this.isRunning
+    })
+
     // Utiliser le store pour persister automatiquement
     queueStore.enqueue(task)
+    
+    console.log('[PersistedQueueManager] Task added to store, new queue size:', queueStore.queueSize)
 
     // Démarrer le traitement si pas déjà en cours
     if (!this.isRunning && this.processor) {
+      console.log('[PersistedQueueManager] Starting processing...')
       this.startProcessing()
+    } else if (!this.processor) {
+      console.warn('[PersistedQueueManager] Processor not set yet, task will wait')
+    } else {
+      console.log('[PersistedQueueManager] Already processing, task will be picked up')
     }
   }
 
@@ -173,15 +190,21 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
    */
   private async startProcessing(): Promise<void> {
     if (this.isRunning || !this.processor) {
+      console.log('[PersistedQueueManager] startProcessing aborted:', { 
+        isRunning: this.isRunning, 
+        hasProcessor: !!this.processor 
+      })
       return
     }
 
+    console.log('[PersistedQueueManager] startProcessing started')
     this.isRunning = true
 
     while (true) {
       const queueStore = this.getQueueStore()
       
       if (queueStore.queueSize === 0 && this.processing.size === 0) {
+        console.log('[PersistedQueueManager] Queue empty, stopping processing')
         break
       }
 
@@ -205,6 +228,8 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
 
       // Traiter les tâches en parallèle
       if (tasksToProcess.length > 0) {
+        console.log('[PersistedQueueManager] Processing', tasksToProcess.length, 'tasks:', 
+          tasksToProcess.map(t => `${t.entityType}:${t.operation}:${t.id.substring(0, 20)}...`))
         const promises = tasksToProcess.map(task => this.processTask(task))
         await Promise.allSettled(promises)
       }
@@ -216,6 +241,7 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
     }
 
     this.isRunning = false
+    console.log('[PersistedQueueManager] Processing stopped')
   }
 
   /**
@@ -225,8 +251,16 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
    */
   private async processTask(task: PersistenceTask<T>): Promise<void> {
     if (!this.processor) {
+      console.warn('[PersistedQueueManager] processTask called but no processor')
       return
     }
+
+    console.log('[PersistedQueueManager] processTask started:', {
+      taskId: task.id,
+      entityType: task.entityType,
+      operation: task.operation,
+      retryCount: task.retryCount
+    })
 
     this.processing.add(task.id)
     const queueStore = this.getQueueStore()
@@ -236,10 +270,17 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
       
       // ✅ Tâche réussie : maintenant on peut la retirer de la queue
       queueStore.dequeue(task.id)
+      console.log('[PersistedQueueManager] Task completed successfully:', task.id)
     } catch (error) {
       // ❌ Tâche échouée : toujours remettre en queue avec backoff exponentiel
       // Offline-first : on ne supprime jamais une tâche, on la retente indéfiniment
       task.retryCount++
+      
+      console.warn('[PersistedQueueManager] Task failed:', {
+        taskId: task.id,
+        retryCount: task.retryCount,
+        error: error instanceof Error ? error.message : String(error)
+      })
       
       // Calculer le délai avec backoff exponentiel
       const delay = calculateRetryDelay(
@@ -267,8 +308,11 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
       if (!queueStore.getTaskById(task.id)) {
         queueStore.enqueue(task)
       }
+      
+      console.log('[PersistedQueueManager] Task scheduled for retry:', task.id)
     } finally {
       this.processing.delete(task.id)
+      console.log('[PersistedQueueManager] processTask finished:', task.id)
     }
   }
 

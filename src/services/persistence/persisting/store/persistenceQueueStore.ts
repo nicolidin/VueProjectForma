@@ -35,9 +35,16 @@ export const usePersistenceQueueStore = defineStore('persistenceQueue', () => {
   function enqueue(task: PersistenceTask): void {
     // Éviter les doublons
     if (pendingTasks.value.some(t => t.id === task.id)) {
-      console.warn(`Task ${task.id} already exists in queue, skipping`)
+      console.warn(`[PersistenceQueueStore] Task ${task.id} already exists in queue, skipping`)
       return
     }
+
+    console.log('[PersistenceQueueStore] enqueue called:', {
+      taskId: task.id,
+      entityType: task.entityType,
+      operation: task.operation,
+      currentSize: pendingTasks.value.length
+    })
 
     // Insérer selon la priorité (plus haute priorité en premier)
     const insertIndex = pendingTasks.value.findIndex(
@@ -49,6 +56,8 @@ export const usePersistenceQueueStore = defineStore('persistenceQueue', () => {
     } else {
       pendingTasks.value.splice(insertIndex, 0, task)
     }
+    
+    console.log('[PersistenceQueueStore] Task added, new size:', pendingTasks.value.length)
   }
 
   /**
