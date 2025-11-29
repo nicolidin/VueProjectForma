@@ -5,12 +5,12 @@
  */
 
 import { EventBus } from './core/eventBus'
-import { PersistedQueueManager } from './persisting/queue'
+import { PersistedQueueManager } from './queue'
 import { PersistenceOrchestrator } from './core/orchestrator'
 import type { PersistenceEvents, PersistenceStrategy } from './core/types'
 import type { RetryConfig } from './core/retryManager'
 import { DEFAULT_RETRY_CONFIG } from './core/retryManager'
-import { initPersistenceQueueStore } from './persisting/store'
+import { initPersistenceQueueStore } from './queue/store'
 import { SyncAdaptersManager, type SyncAdapter } from './sync/syncAdapters'
 
 /**

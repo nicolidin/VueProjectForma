@@ -4,13 +4,13 @@
  * La queue est automatiquement persistée dans localStorage via Pinia
  */
 
-import type { PersistenceTask } from '../../core/types'
-import { TaskPriority } from '../../core/types'
-import type { IQueueManager, TaskProcessor } from '../../core/IQueueManager'
-import { RetryManager, type RetryConfig } from '../../core/retryManager'
-import { TIMING, QUEUE_DEFAULTS } from '../../core/constants'
-import { updateMetadataOnError } from '../../core/metadata'
-import { usePersistenceQueueStore } from '../store'
+import type { PersistenceTask } from '../core/types'
+import { TaskPriority } from '../core/types'
+import type { IQueueManager, TaskProcessor } from '../core/IQueueManager'
+import { RetryManager, type RetryConfig } from '../core/retryManager'
+import { TIMING, QUEUE_DEFAULTS } from '../core/constants'
+import { updateMetadataOnError } from '../core/metadata'
+import { usePersistenceQueueStore } from './store'
 
 /**
  * Queue Manager qui utilise le store Pinia pour la persistance

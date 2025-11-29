@@ -4,5 +4,5 @@
 
 export * from './core'
 export * from './usePersistence'
-export * from './persisting'
+export * from './queue'
 export * from './sync/syncAdapters'
