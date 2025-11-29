@@ -51,10 +51,9 @@ export const DEFAULT_RETRY_CONFIG: RetryConfig = {
 }
 
 /**
- * Résultat de l'analyse d'une erreur
+ * Résultat de l'analyse d'une erreur (pour logging uniquement)
  */
 export interface ErrorAnalysis {
-  isRetryable: boolean
   error: unknown
   httpStatus?: number
   code?: string
@@ -62,15 +61,10 @@ export interface ErrorAnalysis {
 }
 
 /**
- * Analyse une erreur pour déterminer si elle est récupérable
- * 
- * Philosophie : Par défaut, TOUT est retryable (fail-safe)
- * Les limites sont gérées par maxRetries et expiresAt dans la configuration
+ * Analyse une erreur pour extraire des informations utiles au logging
+ * Ne détermine pas si l'erreur est récupérable (toujours géré par shouldRetry)
  */
 export function analyzeError(error: unknown): ErrorAnalysis {
-  // ✅ TOUT est retryable par défaut
-  // Les limites sont gérées par maxRetries et expiresAt
-  
   // On catégorise les erreurs pour le logging et le debugging
   let code = 'UNKNOWN_ERROR'
   let httpStatus: number | undefined
@@ -109,9 +103,7 @@ export function analyzeError(error: unknown): ErrorAnalysis {
     }
   }
 
-  // ✅ TOUT est retryable
   return {
-    isRetryable: true,
     error,
     code,
     httpStatus,
@@ -177,24 +169,13 @@ export class RetryManager {
    * Accepte soit PersistenceTask soit un objet avec retryCount/maxRetries depuis les métadonnées
    */
   shouldRetry(error: unknown, task: TaskWithRetryInfo): boolean {
-    // 1. Analyser l'erreur pour déterminer si elle est récupérable
-    const analysis = analyzeError(error)
-    if (!analysis.isRetryable) {
-      console.log(`[RetryManager] Error not retryable for task ${task.id}:`, {
-        code: analysis.code,
-        message: analysis.message,
-        httpStatus: analysis.httpStatus
-      })
-      return false
-    }
-
-    // 2. Vérifier l'expiration de la tâche
+    // 1. Vérifier l'expiration de la tâche
     if (task.expiresAt && Date.now() > task.expiresAt) {
       console.log(`[RetryManager] Task ${task.id} expired, not retrying`)
       return false
     }
 
-    // 3. Limiter le nombre total de tentatives
+    // 2. Limiter le nombre total de tentatives
     // retryCount = 0 : première tentative
     // retryCount = 1 : deuxième tentative (1er retry)
     // retryCount = 2 : troisième tentative (2ème retry)

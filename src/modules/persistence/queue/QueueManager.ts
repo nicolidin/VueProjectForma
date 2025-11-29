@@ -6,18 +6,22 @@
 
 import type { PersistenceTask } from '../core/types'
 import { TaskPriority } from '../core/types'
-import type { IQueueManager, TaskProcessor } from '../core/IQueueManager'
 import { RetryManager, type RetryConfig } from '../core/retryManager'
 import { TIMING, QUEUE_DEFAULTS } from '../core/constants'
 import { updateMetadataOnError } from '../core/metadata'
 import { usePersistenceQueueStore } from './store'
 
 /**
+ * Callback appelé quand une tâche est traitée
+ */
+export type TaskProcessor<T = unknown> = (task: PersistenceTask<T>) => Promise<void>
+
+/**
  * Queue Manager qui utilise le store Pinia pour la persistance
  * Les tâches sont automatiquement persistées dans localStorage
  * Restaure automatiquement les tâches au démarrage
  */
-export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
+export class PersistedQueueManager<T = unknown> {
   private processing: Set<string> = new Set()
   private maxConcurrent: number = QUEUE_DEFAULTS.MAX_CONCURRENT
   private maxQueueSize: number = QUEUE_DEFAULTS.MAX_QUEUE_SIZE

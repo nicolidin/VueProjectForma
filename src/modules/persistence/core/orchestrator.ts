@@ -11,7 +11,7 @@ import type {
   PersistenceEvents
 } from './types'
 import type { EventBus } from './eventBus'
-import type { IQueueManager } from './IQueueManager'
+import type { PersistedQueueManager } from '../queue/QueueManager'
 import { updateMetadataOnSuccess, updateMetadataOnError, updateMetadataOnSyncing } from './metadata'
 import { createTask } from './taskHelpers'
 
@@ -21,14 +21,14 @@ import { createTask } from './taskHelpers'
  */
 export class PersistenceOrchestrator<T = unknown> {
   private eventBus: EventBus<PersistenceEvents<T>>
-  private queue: IQueueManager<T>
+  private queue: PersistedQueueManager<T>
   private strategies: Map<string, PersistenceStrategy<T>> = new Map()
   private maxRetries: number
   private unsubscribeFunctions: Array<() => void> = []
 
   constructor(
     eventBus: EventBus<PersistenceEvents<T>>,
-    queue: IQueueManager<T>,
+    queue: PersistedQueueManager<T>,
     maxRetries: number = 3
   ) {
     this.eventBus = eventBus

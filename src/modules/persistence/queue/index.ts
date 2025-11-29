@@ -3,5 +3,5 @@
  */
 
 export * from './store'
-export { PersistedQueueManager } from './QueueManager'
+export { PersistedQueueManager, type TaskProcessor } from './QueueManager'
 
