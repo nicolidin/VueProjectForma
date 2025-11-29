@@ -19,13 +19,11 @@ usePersistence({
     note: new NoteRestApiStrategy(),
     tag: new TagRestApiStrategy()
   },
-  options: {
-    retryConfig: {
-      maxRetries: 3, // 3 tentatives par défaut
-      initialDelay: 180000, // 3 minutes pour le premier retry
-      multiplier: 4, // Multiplicateur de 4 : 3min → 12min → 48min
-      maxDelay: 3600000 // 1 heure maximum
-    },
+  retryConfig: {
+    maxRetries: 3, // 3 tentatives par défaut
+    initialDelay: 180000, // 3 minutes pour le premier retry
+    multiplier: 4, // Multiplicateur de 4 : 3min → 12min → 48min
+    maxDelay: 3600000 // 1 heure maximum
   },
   // Les adapters de synchronisation permettent de mettre à jour les stores
   // après qu'une entité ait été persistée avec succès (mise à jour des _id MongoDB)

@@ -6,11 +6,24 @@
 
 import { EventBus } from './core/eventBus'
 import { PersistedQueueManager } from './persisting/queue'
-import { PersistenceOrchestrator, type OrchestratorOptions } from './core/orchestrator'
-import type { PersistenceEvents, PersistenceStrategy, TaskPriority } from './core/types'
+import { PersistenceOrchestrator } from './core/orchestrator'
+import type { PersistenceEvents, PersistenceStrategy } from './core/types'
 import type { RetryConfig } from './core/retryManager'
 import { initPersistenceQueueStore } from './persisting/store'
 import { SyncAdaptersManager, type SyncAdapter } from './sync/syncAdapters'
+
+/**
+ * EventBus global pour la persistance
+ * 
+ * IMPORTANT : Cet EventBus est créé au chargement du module (avant toute initialisation)
+ * pour permettre aux stores Pinia d'y accéder même si usePersistence() n'a pas encore été appelé.
+ * 
+ * Problème résolu : Les stores Pinia peuvent s'initialiser avant usePersistence() dans App.vue.
+ * Sans cet EventBus global, les stores lanceraient une erreur lors de leur setup.
+ * 
+ * Le service utilise ce même EventBus global (pas de duplication, juste un partage).
+ */
+const persistenceEventBus = new EventBus<PersistenceEvents>()
 
 /**
  * Configuration des stratégies de persistance
@@ -21,71 +34,33 @@ export interface PersistenceStrategies {
 }
 
 /**
- * Options de configuration pour le système de persistance
- */
-export interface PersistenceOptions {
-  /**
-   * Priorité par défaut pour toutes les tâches (défaut: NORMAL)
-   */
-  defaultPriority?: TaskPriority
-  /**
-   * Durée de vie maximale d'une tâche en ms (optionnel)
-   * Si défini, les tâches expireront après cette durée
-   * Ex: 7 jours = 7 * 24 * 60 * 60 * 1000 = 604800000
-   */
-  defaultMaxAge?: number
-  /**
-   * Configuration du retry globale (timing, backoff exponentiel, nombre de tentatives)
-   * Si non défini, utilise la configuration par défaut :
-   * - maxRetries: 3
-   * - initialDelay: 30000 (30 secondes)
-   * - multiplier: 4
-   * - maxDelay: 600000 (10 minutes)
-   * Séquence : 30s → 120s (2min) → 480s (8min) → 1920s (32min, limité à 10min)
-   */
-  retryConfig?: Partial<RetryConfig>
-  /**
-   * Configuration du retry spécifique par type d'entité
-   * Permet d'override la configuration globale pour certains types d'entités
-   * Ex: { note: { maxRetries: 5 }, tag: { maxRetries: 2 } }
-   */
-  retryConfigByEntityType?: {
-    [entityType: string]: Partial<RetryConfig>
-  }
-}
-
-/**
- * Configuration complète pour initialiser le système de persistance
+ * Configuration simplifiée pour initialiser le système de persistance
  */
 export interface PersistenceConfig {
   /**
-   * Les stratégies de persistance à enregistrer pour chaque type d'entité
+   * Les stratégies de persistance à enregistrer pour chaque type d'entité (obligatoire)
    */
   strategies: PersistenceStrategies
+  
   /**
-   * Options de configuration (retries, priorités, etc.)
+   * Configuration du retry (optionnel, utilise les defaults sinon)
+   * Une seule config globale pour tout le système
    */
-  options?: PersistenceOptions
+  retryConfig?: Partial<RetryConfig>
+  
   /**
-   * Adapters de synchronisation pour mettre à jour les stores après persistance
+   * Adapters de synchronisation pour mettre à jour les stores après persistance (optionnel)
    * Les stores exposent ces adapters qui sont ensuite enregistrés ici
    */
   syncAdapters?: Array<SyncAdapter>
 }
 
 /**
- * EventBus global pour la persistance
- * Créé dès le chargement du module pour être disponible avant l'initialisation du service
- * Permet aux stores d'accéder à l'eventBus même si usePersistence() n'a pas encore été appelé
- */
-const persistenceEventBus = new EventBus<PersistenceEvents>()
-
-/**
  * Service centralisé de persistance
  * Encapsule tout l'état et la logique d'initialisation
- * Respecte le principe SOC en centralisant la gestion d'état
  */
 class PersistenceService {
+  private readonly eventBus: EventBus<PersistenceEvents>
   private readonly queue: PersistedQueueManager
   private readonly orchestrator: PersistenceOrchestrator
   private readonly syncAdaptersManager: SyncAdaptersManager
@@ -93,48 +68,33 @@ class PersistenceService {
 
   /**
    * Crée une nouvelle instance du service de persistance
-   * @param config - Configuration complète ou simplement les stratégies (rétrocompatibilité)
+   * @param config - Configuration du système de persistance
    */
-  constructor(config?: PersistenceConfig | PersistenceStrategies) {
+  constructor(config: PersistenceConfig) {
     console.log('[PersistenceService] Creating persistence service...')
 
     // Initialiser et valider le store de queue (doit être fait après Pinia est prêt)
     initPersistenceQueueStore()
 
-    // Extraire les stratégies et options selon le format passé
-    const { strategies, options } = this.normalizeConfig(config)
-
-    // Utiliser l'eventBus global (créé au chargement du module)
+    // Utiliser l'EventBus global (créé au chargement du module)
     // Cela permet aux stores d'y accéder même avant l'initialisation du service
+    this.eventBus = persistenceEventBus
 
     // Créer la queue avec la config retryConfig si fournie
-    this.queue = new PersistedQueueManager({
-      retryConfig: options?.retryConfig
-    })
-    console.log('[PersistenceService] Queue created with retryConfig:', options?.retryConfig)
+    this.queue = new PersistedQueueManager(config.retryConfig)
+    console.log('[PersistenceService] Queue created with retryConfig:', config.retryConfig)
 
-    // Préparer les options pour l'orchestrateur
-    const orchestratorOptions: OrchestratorOptions = {
-      defaultPriority: options?.defaultPriority,
-      defaultMaxAge: options?.defaultMaxAge,
-      retryConfig: options?.retryConfig,
-      retryConfigByEntityType: options?.retryConfigByEntityType
-    }
-
-    // Créer l'orchestrateur
-    console.log('[PersistenceService] Creating orchestrator with options:', orchestratorOptions)
+    // Créer l'orchestrateur avec la même config retry
     this.orchestrator = new PersistenceOrchestrator(
-      persistenceEventBus,
+      this.eventBus,
       this.queue,
-      orchestratorOptions
+      config.retryConfig
     )
 
-    // Enregistrer les stratégies pour chaque type d'entité si fournies
-    if (strategies) {
-      for (const [entityType, strategy] of Object.entries(strategies)) {
-        this.orchestrator.registerStrategy(entityType, strategy)
-        console.log(`[PersistenceService] Strategy registered for entity type: ${entityType}`)
-      }
+    // Enregistrer les stratégies pour chaque type d'entité
+    for (const [entityType, strategy] of Object.entries(config.strategies)) {
+      this.orchestrator.registerStrategy(entityType, strategy)
+      console.log(`[PersistenceService] Strategy registered for entity type: ${entityType}`)
     }
 
     // Initialiser le processeur APRÈS l'enregistrement des stratégies
@@ -142,12 +102,9 @@ class PersistenceService {
     this.orchestrator.initializeProcessor()
     console.log('[PersistenceService] Orchestrator created and processor initialized')
 
-    // Créer le gestionnaire de sync adapters
-    this.syncAdaptersManager = new SyncAdaptersManager(persistenceEventBus)
-    console.log('[PersistenceService] SyncAdaptersManager created')
-
-    // Enregistrer les adapters si fournis
-    if (config && 'syncAdapters' in config && config.syncAdapters) {
+    // Créer et enregistrer les sync adapters
+    this.syncAdaptersManager = new SyncAdaptersManager(this.eventBus)
+    if (config.syncAdapters && config.syncAdapters.length > 0) {
       this.syncAdaptersManager.registerAll(config.syncAdapters)
       console.log(`[PersistenceService] ${config.syncAdapters.length} sync adapter(s) registered`)
     }
@@ -165,29 +122,6 @@ class PersistenceService {
   }
 
   /**
-   * Normalise la configuration pour supporter les deux formats (nouveau et ancien)
-   * @private
-   */
-  private normalizeConfig(
-    config?: PersistenceConfig | PersistenceStrategies
-  ): { strategies?: PersistenceStrategies; options?: PersistenceOptions } {
-    if (!config) {
-      return {}
-    }
-
-    // Nouveau format : { strategies: {...}, options: {...} }
-    if ('strategies' in config) {
-      return {
-        strategies: config.strategies,
-        options: config.options
-      }
-    }
-
-    // Ancien format (rétrocompatibilité) : juste les stratégies
-    return { strategies: config }
-  }
-
-  /**
    * Vérifie si le service est initialisé
    */
   isInitialized(): boolean {
@@ -198,7 +132,7 @@ class PersistenceService {
    * Retourne l'event bus (pour utilisation dans les stores)
    */
   getEventBus(): EventBus<PersistenceEvents> {
-    return persistenceEventBus
+    return this.eventBus
   }
 
   /**
@@ -245,12 +179,10 @@ let serviceInstance: PersistenceService | null = null
  * Doit être appelé une seule fois au niveau de l'application (App.vue)
  * Doit être appelé APRÈS l'initialisation de Pinia
  * 
- * @param config - Configuration complète (stratégies + options) ou simplement les stratégies (rétrocompatibilité)
+ * @param config - Configuration du système de persistance
  * @returns L'instance du service de persistance
  */
-export function usePersistence(
-  config?: PersistenceConfig | PersistenceStrategies
-): PersistenceService {
+export function usePersistence(config: PersistenceConfig): PersistenceService {
   // Si le service existe déjà, on le retourne (singleton)
   // Note: Si une config est fournie alors que le service existe déjà,
   // on ignore la nouvelle config (comportement singleton classique)
@@ -266,8 +198,13 @@ export function usePersistence(
 
 /**
  * Retourne l'instance de l'event bus (pour utilisation dans les stores)
- * L'eventBus est toujours disponible, même si le service n'est pas encore initialisé
- * Cela permet aux stores de s'initialiser avant usePersistence()
+ * 
+ * IMPORTANT : Cette fonction est toujours disponible, même si usePersistence() n'a pas encore été appelé.
+ * L'EventBus global est créé au chargement du module, permettant aux stores Pinia de s'initialiser
+ * avant que le service ne soit créé dans App.vue.
+ * 
+ * Si des événements sont émis avant l'initialisation du service, ils seront simplement ignorés
+ * (pas de listeners encore enregistrés). C'est un comportement attendu et sans danger.
  */
 export function getPersistenceEventBus(): EventBus<PersistenceEvents> {
   return persistenceEventBus

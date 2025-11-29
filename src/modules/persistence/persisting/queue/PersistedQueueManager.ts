@@ -12,40 +12,21 @@ import { TIMING, QUEUE_DEFAULTS } from '../../core/constants'
 import { usePersistenceQueueStore } from '../store'
 
 /**
- * Options de configuration de la queue
- */
-export interface PersistedQueueOptions {
-  maxConcurrent?: number // Nombre max de tâches en parallèle (défaut: QUEUE_DEFAULTS.MAX_CONCURRENT)
-  maxQueueSize?: number // Taille max de la queue (défaut: QUEUE_DEFAULTS.MAX_QUEUE_SIZE)
-  autoStart?: boolean // Démarrer automatiquement le traitement au démarrage (défaut: true)
-  retryConfig?: Partial<RetryConfig> // Configuration du retry (défaut: backoff exponentiel en minutes)
-}
-
-/**
  * Queue Manager qui utilise le store Pinia pour la persistance
  * Les tâches sont automatiquement persistées dans localStorage
  * Restaure automatiquement les tâches au démarrage
  */
 export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
   private processing: Set<string> = new Set()
-  private options: Required<Omit<PersistedQueueOptions, 'autoStart' | 'retryConfig'>> & { 
-    autoStart: boolean
-    retryConfig?: Partial<RetryConfig>
-  }
+  private maxConcurrent: number = QUEUE_DEFAULTS.MAX_CONCURRENT
+  private maxQueueSize: number = QUEUE_DEFAULTS.MAX_QUEUE_SIZE
   private retryManager: RetryManager
   private processor?: TaskProcessor<T>
   private isRunning = false
 
-  constructor(options: PersistedQueueOptions = {}) {
-    this.options = {
-      maxConcurrent: options.maxConcurrent ?? QUEUE_DEFAULTS.MAX_CONCURRENT,
-      maxQueueSize: options.maxQueueSize ?? QUEUE_DEFAULTS.MAX_QUEUE_SIZE,
-      autoStart: options.autoStart ?? true,
-      retryConfig: options.retryConfig
-    }
-
+  constructor(retryConfig?: Partial<RetryConfig>) {
     // Initialiser le RetryManager avec la configuration
-    this.retryManager = new RetryManager(options.retryConfig)
+    this.retryManager = new RetryManager(retryConfig)
 
     // Ne pas appeler usePersistenceQueueStore() dans le constructeur
     // car Pinia n'est peut-être pas encore initialisé
@@ -91,8 +72,8 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
    */
   enqueue(task: PersistenceTask<T>): void {
     const queueStore = this.getQueueStore()
-    if (queueStore.queueSize >= this.options.maxQueueSize) {
-      throw new Error(`Queue is full (max size: ${this.options.maxQueueSize})`)
+    if (queueStore.queueSize >= this.maxQueueSize) {
+      throw new Error(`Queue is full (max size: ${this.maxQueueSize})`)
     }
 
     console.log('[PersistedQueueManager] enqueue called:', {
@@ -204,9 +185,9 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
       // - Elle n'a pas de retryAt OU retryAt est dans le passé
       for (const task of sortedTasks) {
         if (
-          tasksToProcess.length < this.options.maxConcurrent &&
+          tasksToProcess.length < this.maxConcurrent &&
           !this.processing.has(task.id) &&
-          this.processing.size < this.options.maxConcurrent
+          this.processing.size < this.maxConcurrent
         ) {
           // Vérifier si la tâche est prête à être traitée (pas de retryAt ou retryAt dépassé)
           const isReady = !task.retryAt || task.retryAt <= now
