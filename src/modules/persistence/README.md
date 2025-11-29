@@ -2,7 +2,7 @@
 
 ## Architecture
 
-Ce module implémente une architecture de persistance générique basée sur **EventBus + QueueManager**, respectant les principes de **Separation of Concerns (SOC)** et permettant une extensibilité maximale pour supporter différentes stratégies (REST, CRDT, décentralisé, etc.).
+Ce module implémente une architecture de persistance générique basée sur **EventBus + PersistedQueueManager**, respectant les principes de **Separation of Concerns (SOC)** et permettant une extensibilité maximale pour supporter différentes stratégies (REST, CRDT, décentralisé, etc.).
 
 ### Structure
 
@@ -14,7 +14,7 @@ modules/persistence/          # Module générique (réutilisable)
 │   ├── types.ts              # Types génériques + metadata de persistance
 │   ├── metadata.ts           # Helpers pour gérer les métadonnées
 │   ├── eventBus.ts           # EventBus générique et réutilisable
-│   ├── queue.ts              # QueueManager avec séquençage, retry, priorité
+│   ├── IQueueManager.ts      # Interface pour les queue managers
 │   ├── orchestrator.ts       # Orchestrateur générique
 │   ├── retryManager.ts       # Gestionnaire de retry avec backoff exponentiel
 │   └── index.ts              # Exports centralisés
@@ -61,16 +61,17 @@ Cette architecture respecte plusieurs principes importants :
 - Supporte les handlers synchrones et asynchrones
 - **Important** : L'EventBus est disponible même avant l'initialisation du service, permettant aux stores de s'initialiser en premier
 
-### 2. **QueueManager** (`core/queue.ts` / `persisting/queue/PersistedQueueManager.ts`)
+### 2. **PersistedQueueManager** (`persisting/queue/PersistedQueueManager.ts`)
 - Gère les tâches de persistance de manière séquentielle (ou avec parallélisme limité)
 - Tri par priorité (plus haute priorité en premier)
 - Retry automatique avec backoff exponentiel **non-bloquant** (utilise `retryAt`)
 - Gestion des erreurs et échecs définitifs
 - Queue persistée dans localStorage via Pinia (support offline)
+- Source de vérité unique : toutes les opérations passent par le store Pinia
 
 ### 3. **PersistenceOrchestrator** (`core/orchestrator.ts`)
 - Écoute les événements du store via EventBus
-- Met les tâches en queue via QueueManager
+- Met les tâches en queue via PersistedQueueManager
 - Délègue la persistance à la stratégie configurée selon le type d'entité
 - Gère les métadonnées de persistance (syncStatus, retryCount, etc.)
 - Émet des événements de résultat (`entity:persisted`, `entity:persist-error`, etc.)
@@ -112,7 +113,7 @@ class PersistenceService {
 
 #### Responsabilités
 - **Encapsulation** : Toute l'état (queue, orchestrator, syncAdapters) est centralisé dans une seule classe
-- **Initialisation** : Crée et configure tous les composants (QueueManager, Orchestrator, SyncAdaptersManager)
+- **Initialisation** : Crée et configure tous les composants (PersistedQueueManager, Orchestrator, SyncAdaptersManager)
 - **Gestion des stratégies** : Enregistre les stratégies de persistance pour chaque type d'entité
 - **Singleton** : Une seule instance pour toute l'application (gérée par `usePersistence()`)
 - **Testabilité** : Méthode `destroy()` pour nettoyer les ressources en tests
@@ -255,7 +256,7 @@ Voici le parcours complet d'une tâche, étape par étape :
    └─> Crée une PersistenceTask avec métadonnées
    └─> Enqueue dans PersistedQueueManager
 
-3. QueueManager traite la tâche
+3. PersistedQueueManager traite la tâche
    └─> Vérifie retryAt (si présent, attend)
    └─> Appelle le processeur (orchestrator.processTask)
 
@@ -288,7 +289,7 @@ import { useNotesStore } from '@/stores/notes'
 const notesStore = useNotesStore()
 
 // Dans App.vue
-// Initialise EventBus, QueueManager et Orchestrator avec les stratégies spécifiques au projet
+// Initialise EventBus, PersistedQueueManager et Orchestrator avec les stratégies spécifiques au projet
 // Les sync adapters permettent de synchroniser les stores après persistance
 usePersistence({
   strategies: {
@@ -494,9 +495,9 @@ if (service.isInitialized()) {
 └──────┬──────┘
        │ enqueue
        ▼
-┌─────────────┐
-│QueueManager │ (séquentiel, retry, priorité)
-└──────┬──────┘
+┌─────────────────────┐
+│PersistedQueueManager│ (séquentiel, retry, priorité, persisté)
+└──────┬──────────────┘
        │ process
        ▼
 ┌─────────────┐      ┌──────────────────┐
@@ -545,7 +546,7 @@ if (service.isInitialized()) {
 1. **SOC Maximale** :
    - Store : Gère uniquement l'état local
    - EventBus : Communication découplée
-   - QueueManager : Gestion séquentielle et retry
+   - PersistedQueueManager : Gestion séquentielle, retry et persistance
    - Orchestrator : Orchestration sans connaître les détails
    - Strategy : Implémentation pure (REST, CRDT, etc.)
 

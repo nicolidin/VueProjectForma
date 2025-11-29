@@ -74,7 +74,7 @@ export const QUEUE_DEFAULTS = {
   MAX_QUEUE_SIZE: Infinity,
 
   /**
-   * Délai de retry simple pour QueueManager (non utilisé actuellement)
+   * Délai de retry simple (non utilisé actuellement)
    * @deprecated Utiliser RetryManager avec backoff exponentiel à la place
    */
   RETRY_DELAY_MS: 1000,

@@ -10,7 +10,7 @@ persisting/
 │   ├── persistenceQueueStore.ts  # Store Pinia pour la queue
 │   └── index.ts                 # Exports
 ├── queue/
-│   ├── PersistedQueueManager.ts # QueueManager qui utilise le store
+│   ├── PersistedQueueManager.ts # Queue manager avec persistance via Pinia
 │   └── index.ts                 # Exports
 ├── utils/
 │   ├── serialization.ts        # Helpers pour validation/sérialisation

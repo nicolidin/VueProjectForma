@@ -1,6 +1,6 @@
 /**
  * Interface commune pour les queue managers
- * Permet d'utiliser QueueManager ou PersistedQueueManager de manière interchangeable
+ * Définit le contrat que doit respecter toute implémentation de queue manager
  */
 
 import type { PersistenceTask } from './types'

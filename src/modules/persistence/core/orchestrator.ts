@@ -1,6 +1,6 @@
 /**
  * Orchestrateur de persistance générique
- * Coordonne EventBus, QueueManager et Strategy
+ * Coordonne EventBus, PersistedQueueManager et Strategy
  * Code pur, respecte le principe SOC
  */
 
