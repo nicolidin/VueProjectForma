@@ -62,45 +62,5 @@ export class EventBus<T extends Record<string, unknown>> {
     }
   }
 
-  /**
-   * Retire tous les listeners d'un événement
-   * @param event - Le nom de l'événement (optionnel, si non fourni retire tous les listeners)
-   */
-  off<K extends keyof T>(event?: K): void {
-    if (event) {
-      this.handlers.delete(event)
-    } else {
-      this.handlers.clear()
-    }
-  }
-
-  /**
-   * Retire un listener spécifique
-   * @param event - Le nom de l'événement
-   * @param handler - Le handler à retirer
-   */
-  removeListener<K extends keyof T>(event: K, handler: EventHandler<T[K]>): void {
-    const handlers = this.handlers.get(event)
-    if (handlers) {
-      handlers.delete(handler)
-      if (handlers.size === 0) {
-        this.handlers.delete(event)
-      }
-    }
-  }
-
-  /**
-   * Retourne le nombre de listeners pour un événement
-   */
-  listenerCount<K extends keyof T>(event: K): number {
-    return this.handlers.get(event)?.size || 0
-  }
-
-  /**
-   * Retourne tous les événements qui ont des listeners
-   */
-  eventNames(): Array<keyof T> {
-    return Array.from(this.handlers.keys())
-  }
 }
 

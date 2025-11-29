@@ -87,13 +87,6 @@ export const usePersistenceQueueStore = defineStore('persistenceQueue', () => {
   }
 
   /**
-   * Récupère une tâche par ID
-   */
-  function getTaskById(taskId: string): PersistenceTask | undefined {
-    return pendingTasks.value.find(t => t.id === taskId)
-  }
-
-  /**
    * Met à jour une tâche existante
    */
   function updateTask(taskId: string, updates: Partial<PersistenceTask>): boolean {
@@ -108,42 +101,6 @@ export const usePersistenceQueueStore = defineStore('persistenceQueue', () => {
     return false
   }
 
-  /**
-   * Retire toutes les tâches d'un type d'entité spécifique
-   */
-  function removeTasksByEntityType(entityType: string): number {
-    const initialLength = pendingTasks.value.length
-    pendingTasks.value = pendingTasks.value.filter(
-      t => t.entityType !== entityType
-    )
-    return initialLength - pendingTasks.value.length
-  }
-
-  /**
-   * Retire toutes les tâches d'une opération spécifique
-   */
-  function removeTasksByOperation(operation: PersistenceTask['operation']): number {
-    const initialLength = pendingTasks.value.length
-    pendingTasks.value = pendingTasks.value.filter(
-      t => t.operation !== operation
-    )
-    return initialLength - pendingTasks.value.length
-  }
-
-  /**
-   * Retourne le nombre de tâches d'un type d'entité spécifique
-   */
-  function countTasksByEntityType(entityType: string): number {
-    return pendingTasks.value.filter(t => t.entityType === entityType).length
-  }
-
-  /**
-   * Retourne le nombre de tâches d'une opération spécifique
-   */
-  function countTasksByOperation(operation: PersistenceTask['operation']): number {
-    return pendingTasks.value.filter(t => t.operation === operation).length
-  }
-
   return {
     // État
     pendingTasks,
@@ -156,12 +113,7 @@ export const usePersistenceQueueStore = defineStore('persistenceQueue', () => {
     dequeue,
     clear,
     getPendingTasks,
-    getTaskById,
-    updateTask,
-    removeTasksByEntityType,
-    removeTasksByOperation,
-    countTasksByEntityType,
-    countTasksByOperation
+    updateTask
   }
 }, {
   // Configuration de persistance Pinia

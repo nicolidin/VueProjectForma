@@ -35,7 +35,6 @@ export class PersistedQueueManager<T = unknown> {
 
     // Ne pas appeler usePersistenceQueueStore() dans le constructeur
     // car Pinia n'est peut-être pas encore initialisé
-    // La restauration sera faite dans restoreAndStart() qui sera appelé après
   }
 
   /**
@@ -57,19 +56,6 @@ export class PersistedQueueManager<T = unknown> {
     const queueStore = this.getQueueStore()
     console.log('[PersistedQueueManager] Processor set, queue size:', queueStore.queueSize, 'isRunning:', this.isRunning)
     // Ne pas démarrer automatiquement ici - sera fait explicitement via restart() après init complète
-  }
-
-  /**
-   * Restaure les tâches depuis le store et démarre le traitement
-   * @private
-   */
-  private restoreAndStart(): void {
-    const queueStore = this.getQueueStore()
-    const pendingTasks = queueStore.getPendingTasks()
-    if (pendingTasks.length > 0 && this.processor && !this.isRunning) {
-      console.log(`[PersistedQueueManager] Restoring ${pendingTasks.length} pending tasks`)
-      this.startProcessing()
-    }
   }
 
   /**
@@ -121,13 +107,6 @@ export class PersistedQueueManager<T = unknown> {
   }
 
   /**
-   * Retourne le nombre de tâches en cours de traitement
-   */
-  processingCount(): number {
-    return this.processing.size
-  }
-
-  /**
    * Vérifie si la queue est vide
    */
   isEmpty(): boolean {
@@ -146,13 +125,6 @@ export class PersistedQueueManager<T = unknown> {
    */
   getPendingTasks(): ReadonlyArray<PersistenceTask<T>> {
     return this.getQueueStore().getPendingTasks() as PersistenceTask<T>[]
-  }
-
-  /**
-   * Retourne toutes les tâches en cours de traitement
-   */
-  getProcessingTasks(): string[] {
-    return Array.from(this.processing)
   }
 
   /**

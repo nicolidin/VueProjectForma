@@ -66,7 +66,6 @@ class PersistenceService {
   private readonly orchestrator: PersistenceOrchestrator
   private readonly syncAdaptersManager: SyncAdaptersManager
   private readonly retryConfig: RetryConfig
-  private initialized = false
 
   /**
    * Crée une nouvelle instance du service de persistance
@@ -122,43 +121,7 @@ class PersistenceService {
       this.queue.restart()
     }
 
-    this.initialized = true
     console.log('[PersistenceService] Persistence service initialized successfully')
-  }
-
-  /**
-   * Vérifie si le service est initialisé
-   */
-  isInitialized(): boolean {
-    return this.initialized
-  }
-
-  /**
-   * Retourne l'event bus (pour utilisation dans les stores)
-   */
-  getEventBus(): EventBus<PersistenceEvents> {
-    return this.eventBus
-  }
-
-  /**
-   * Retourne la queue
-   */
-  getQueue(): PersistedQueueManager {
-    return this.queue
-  }
-
-  /**
-   * Retourne l'orchestrateur
-   */
-  getOrchestrator(): PersistenceOrchestrator {
-    return this.orchestrator
-  }
-
-  /**
-   * Retourne le gestionnaire de sync adapters
-   */
-  getSyncAdaptersManager(): SyncAdaptersManager {
-    return this.syncAdaptersManager
   }
 
   /**
@@ -215,28 +178,3 @@ export function getPersistenceEventBus(): EventBus<PersistenceEvents> {
   return persistenceEventBus
 }
 
-/**
- * Retourne l'instance du service (pour utilisation avancée)
- * @throws Error si le service n'est pas encore initialisé
- */
-export function getPersistenceService(): PersistenceService {
-  if (!serviceInstance) {
-    throw new Error(
-      'PersistenceService not initialized. Call usePersistence() first.'
-    )
-  }
-  return serviceInstance
-}
-
-/**
- * Réinitialise le service (utile pour les tests uniquement)
- * ⚠️ Ne pas utiliser en production
- * @internal
- */
-export function resetPersistenceService(): void {
-  if (serviceInstance) {
-    serviceInstance.destroy()
-  }
-  serviceInstance = null
-  console.log('[usePersistence] Service reset (for testing only)')
-}
