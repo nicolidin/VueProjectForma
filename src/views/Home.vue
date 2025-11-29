@@ -1,11 +1,11 @@
 <template>
   <div class="home">
     <NoteCreation
-      :tags="notesStore.tags"
+      :tags="tagsData"
       @create="addNote"
       class="home__note-creation"
     />
-    <ListNote :notes="notesStore.filteredNotes" :available-tags="notesStore.tags" />
+    <ListNote :notes="notesData" :available-tags="tagsData" />
   </div>
 </template>
 
@@ -15,7 +15,7 @@
 import { ListNote, NoteCreation} from "vue-lib-exo-corrected";
 import {useNotesStore} from "../stores/notes.ts";
 import {useAuthStore} from "../stores/auth.ts";
-import {onBeforeMount} from "vue";
+import {onBeforeMount, computed} from "vue";
 import { fetchNotesByUser } from "../api/noteApi.ts";
 import { fetchTagsByUser } from "../api/tagApi.ts";
 import { initNote } from "../types/NoteType.ts";
@@ -26,15 +26,36 @@ const notesStore = useNotesStore()
 const authStore = useAuthStore()
 const router = useRouter()
 
+// ✅ Mapper les tags du store (frontId) vers le format de la lib (id)
+const tagsData = computed(() => {
+  return notesStore.tags.map(tag => ({
+    id: tag.frontId,
+    title: tag.title,
+    color: tag.color
+  }))
+})
 
-function addNote(newVal: { title: string; contentMd: string; tagsFrontId: string[] }) {
+// ✅ Mapper les notes du store (frontId, tagsFrontId) vers le format de la lib (id, tagsId)
+const notesData = computed(() => {
+  return notesStore.filteredNotes.map(note => ({
+    id: note.frontId,
+    contentMd: note.contentMd,
+    createdAt: note.createdAt,
+    tagsId: note.tagsFrontId
+  }))
+})
+
+function addNote(newVal: { title: string; contentMd: string; tagsId: string[] }) {
   // Format the content with title at the beginning
   const formatedContentMd = appendContentToTitle(newVal.contentMd, newVal.title);
+
+  // ✅ Mapper tagsId (de la lib) vers tagsFrontId (du projet hôte)
+  const tagsFrontId = newVal.tagsId || []
 
   // Create the note using initNote (which will add frontId, createdAt, etc.)
   const newNote = initNote({
     contentMd: formatedContentMd,
-    tagsFrontId: newVal.tagsFrontId || []
+    tagsFrontId: tagsFrontId
   });
 
   notesStore.addNote(newNote);
