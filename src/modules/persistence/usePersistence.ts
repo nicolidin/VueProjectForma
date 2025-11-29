@@ -9,6 +9,7 @@ import { PersistedQueueManager } from './persisting/queue'
 import { PersistenceOrchestrator } from './core/orchestrator'
 import type { PersistenceEvents, PersistenceStrategy } from './core/types'
 import type { RetryConfig } from './core/retryManager'
+import { DEFAULT_RETRY_CONFIG } from './core/retryManager'
 import { initPersistenceQueueStore } from './persisting/store'
 import { SyncAdaptersManager, type SyncAdapter } from './sync/syncAdapters'
 
@@ -64,6 +65,7 @@ class PersistenceService {
   private readonly queue: PersistedQueueManager
   private readonly orchestrator: PersistenceOrchestrator
   private readonly syncAdaptersManager: SyncAdaptersManager
+  private readonly retryConfig: RetryConfig
   private initialized = false
 
   /**
@@ -80,15 +82,18 @@ class PersistenceService {
     // Cela permet aux stores d'y accéder même avant l'initialisation du service
     this.eventBus = persistenceEventBus
 
-    // Créer la queue avec la config retryConfig si fournie
-    this.queue = new PersistedQueueManager(config.retryConfig)
-    console.log('[PersistenceService] Queue created with retryConfig:', config.retryConfig)
+    // Créer la config retry une seule fois
+    this.retryConfig = { ...DEFAULT_RETRY_CONFIG, ...(config.retryConfig || {}) }
 
-    // Créer l'orchestrateur avec la même config retry
+    // Queue : a besoin de toute la config (pour RetryManager)
+    this.queue = new PersistedQueueManager(this.retryConfig)
+    console.log('[PersistenceService] Queue created with retryConfig:', this.retryConfig)
+
+    // Orchestrator : a besoin seulement de maxRetries
     this.orchestrator = new PersistenceOrchestrator(
       this.eventBus,
       this.queue,
-      config.retryConfig
+      this.retryConfig.maxRetries
     )
 
     // Enregistrer les stratégies pour chaque type d'entité

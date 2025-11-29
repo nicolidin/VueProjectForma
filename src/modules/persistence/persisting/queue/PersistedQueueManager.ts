@@ -9,6 +9,7 @@ import { TaskPriority } from '../../core/types'
 import type { IQueueManager, TaskProcessor } from '../../core/IQueueManager'
 import { RetryManager, type RetryConfig } from '../../core/retryManager'
 import { TIMING, QUEUE_DEFAULTS } from '../../core/constants'
+import { updateMetadataOnError } from '../../core/metadata'
 import { usePersistenceQueueStore } from '../store'
 
 /**
@@ -24,7 +25,7 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
   private processor?: TaskProcessor<T>
   private isRunning = false
 
-  constructor(retryConfig?: Partial<RetryConfig>) {
+  constructor(retryConfig?: RetryConfig) {
     // Initialiser le RetryManager avec la configuration
     this.retryManager = new RetryManager(retryConfig)
 
@@ -248,11 +249,14 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
       return
     }
 
+    // Utiliser les métadonnées comme source de vérité
+    const metadata = task.payload.metadata
+
     console.log('[PersistedQueueManager] processTask started:', {
       taskId: task.id,
       entityType: task.entityType,
       operation: task.operation,
-      retryCount: task.retryCount
+      retryCount: metadata.retryCount
     })
 
     this.processing.add(task.id)
@@ -263,7 +267,6 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
       console.warn(`[PersistedQueueManager] Task ${task.id} expired, removing from queue`)
       queueStore.dequeue(task.id)
       this.processing.delete(task.id)
-      // Émettre un événement d'expiration si nécessaire
       return
     }
 
@@ -280,8 +283,12 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
       queueStore.dequeue(task.id)
       console.log('[PersistedQueueManager] Task completed successfully:', task.id)
     } catch (error) {
-      // Analyser l'erreur et déterminer si on doit retenter
-      const shouldRetry = this.retryManager.shouldRetry(error, task)
+      // Utiliser les métadonnées comme source de vérité
+      const shouldRetry = this.retryManager.shouldRetry(error, {
+        ...task,
+        retryCount: metadata.retryCount,
+        maxRetries: metadata.maxRetries
+      })
       
       if (!shouldRetry) {
         // Erreur non récupérable ou expiration : supprimer de la queue
@@ -290,41 +297,42 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
           code: analysis.code,
           message: analysis.message,
           httpStatus: analysis.httpStatus,
-          retryCount: task.retryCount
+          retryCount: metadata.retryCount
         })
         
         queueStore.dequeue(task.id)
-        // L'événement 'queue:task-failed-permanently' sera émis par l'orchestrator
         return
       }
 
-      // ❌ Erreur récupérable : planifier le retry avec backoff exponentiel
-      task.retryCount++
+      // Mettre à jour les métadonnées (source de vérité)
+      const updatedMetadata = updateMetadataOnError(metadata, error)
+      task.payload.metadata = updatedMetadata
       
       // Calculer le délai avec backoff exponentiel
-      const delay = this.retryManager.calculateDelay(task)
-      const delayInMinutes = Math.round(delay / TIMING.MS_PER_MINUTE * 10) / 10 // Arrondir à 1 décimale
-      
-      // Calculer le timestamp de retry (maintenant + délai)
+      const delay = this.retryManager.calculateDelay({
+        ...task,
+        retryCount: updatedMetadata.retryCount,
+        maxRetries: updatedMetadata.maxRetries
+      })
+      const delayInMinutes = Math.round(delay / TIMING.MS_PER_MINUTE * 10) / 10
       const retryAt = Date.now() + delay
       
       console.warn('[PersistedQueueManager] Task failed, will retry:', {
         taskId: task.id,
-        retryCount: task.retryCount,
+        retryCount: updatedMetadata.retryCount,
         delayMs: delay,
         delayMinutes: delayInMinutes,
         retryAt: new Date(retryAt).toISOString(),
         error: error instanceof Error ? error.message : String(error)
       })
       
-      // Mettre à jour la tâche dans le store avec retryCount et retryAt
-      // La tâche reste dans la queue mais ne sera pas traitée avant retryAt
+      // Mettre à jour la tâche avec les nouvelles métadonnées
       queueStore.updateTask(task.id, { 
-        retryCount: task.retryCount,
+        payload: task.payload,
         retryAt: retryAt
       })
       
-      console.log(`[PersistedQueueManager] Task scheduled for retry ${task.retryCount} at ${new Date(retryAt).toISOString()} (in ${delayInMinutes} minutes):`, task.id)
+      console.log(`[PersistedQueueManager] Task scheduled for retry ${updatedMetadata.retryCount} at ${new Date(retryAt).toISOString()} (in ${delayInMinutes} minutes):`, task.id)
     } finally {
       this.processing.delete(task.id)
       console.log('[PersistedQueueManager] processTask finished:', task.id)

@@ -51,6 +51,7 @@ export type TaskPriority = typeof TaskPriority[keyof typeof TaskPriority]
 
 /**
  * Tâche de persistance à traiter par la queue
+ * retryCount et maxRetries sont dans payload.metadata (source de vérité unique)
  */
 export interface PersistenceTask<T = unknown> {
   id: string
@@ -59,8 +60,6 @@ export interface PersistenceTask<T = unknown> {
   payload: PersistableEntity<T>
   priority: TaskPriority
   createdAt: number
-  retryCount: number
-  maxRetries: number
   /**
    * Timestamp d'expiration de la tâche (optionnel)
    * Si défini, la tâche ne sera plus retentée après cette date

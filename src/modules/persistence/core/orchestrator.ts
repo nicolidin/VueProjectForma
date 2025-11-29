@@ -14,8 +14,6 @@ import { TaskPriority } from './types'
 import type { EventBus } from './eventBus'
 import type { IQueueManager } from './IQueueManager'
 import { createMetadata, updateMetadataOnSuccess, updateMetadataOnError, updateMetadataOnSyncing } from './metadata'
-import type { RetryConfig } from './retryManager'
-import { DEFAULT_RETRY_CONFIG } from './retryManager'
 
 /**
  * Orchestrateur de persistance
@@ -25,18 +23,17 @@ export class PersistenceOrchestrator<T = unknown> {
   private eventBus: EventBus<PersistenceEvents<T>>
   private queue: IQueueManager<T>
   private strategies: Map<string, PersistenceStrategy<T>> = new Map()
-  private retryConfig: RetryConfig
+  private maxRetries: number
   private unsubscribeFunctions: Array<() => void> = []
 
   constructor(
     eventBus: EventBus<PersistenceEvents<T>>,
     queue: IQueueManager<T>,
-    retryConfig?: Partial<RetryConfig>
+    maxRetries: number = 3
   ) {
     this.eventBus = eventBus
     this.queue = queue
-    // Fusionner la config avec les défauts
-    this.retryConfig = { ...DEFAULT_RETRY_CONFIG, ...(retryConfig || {}) }
+    this.maxRetries = maxRetries
 
     this.setupEventListeners()
     // Ne pas appeler setupQueueProcessor() ici pour éviter la race condition
@@ -102,7 +99,10 @@ export class PersistenceOrchestrator<T = unknown> {
    * @private
    */
   private enqueueCreate(entityType: string, data: T): void {
-    const metadata = createMetadata((data as any).frontId || `temp-${Date.now()}`)
+    const metadata = createMetadata(
+      (data as any).frontId || `temp-${Date.now()}`,
+      { maxRetries: this.maxRetries }
+    )
     const entity: PersistableEntity<T> = { data, metadata }
 
     const task: PersistenceTask<T> = {
@@ -111,9 +111,7 @@ export class PersistenceOrchestrator<T = unknown> {
       operation: 'create',
       payload: entity,
       priority: TaskPriority.NORMAL,
-      createdAt: Date.now(),
-      retryCount: 0,
-      maxRetries: this.retryConfig.maxRetries
+      createdAt: Date.now()
     }
 
     console.log('[PersistenceOrchestrator] Enqueuing create task:', {
@@ -136,7 +134,9 @@ export class PersistenceOrchestrator<T = unknown> {
   private enqueueUpdate(entityType: string, id: string, updates: Partial<T>): void {
     // Pour une mise à jour, on a besoin de reconstruire l'entité complète
     // On utilise les updates comme données partielles
-    const metadata = createMetadata(id)
+    const metadata = createMetadata(id, {
+      maxRetries: this.maxRetries
+    })
     const entity: PersistableEntity<T> = {
       data: updates as T, // Les updates contiennent les données à mettre à jour
       metadata
@@ -148,9 +148,7 @@ export class PersistenceOrchestrator<T = unknown> {
       operation: 'update',
       payload: entity,
       priority: TaskPriority.NORMAL,
-      createdAt: Date.now(),
-      retryCount: 0,
-      maxRetries: this.retryConfig.maxRetries
+      createdAt: Date.now()
     }
 
     this.queue.enqueue(task)
@@ -162,7 +160,9 @@ export class PersistenceOrchestrator<T = unknown> {
    * @private
    */
   private enqueueDelete(entityType: string, id: string): void {
-    const metadata = createMetadata(id)
+    const metadata = createMetadata(id, {
+      maxRetries: this.maxRetries
+    })
     const entity: PersistableEntity<T> = {
       data: {} as T, // Pas besoin de données pour une suppression
       metadata
@@ -174,9 +174,7 @@ export class PersistenceOrchestrator<T = unknown> {
       operation: 'delete',
       payload: entity,
       priority: TaskPriority.NORMAL,
-      createdAt: Date.now(),
-      retryCount: 0,
-      maxRetries: this.retryConfig.maxRetries
+      createdAt: Date.now()
     }
 
     this.queue.enqueue(task)

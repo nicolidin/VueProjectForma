@@ -8,6 +8,7 @@ import { TASK_LIFETIME } from '../../core/constants'
 
 /**
  * Vérifie si une tâche est valide (structure correcte)
+ * retryCount et maxRetries sont dans payload.metadata
  */
 export function isValidTask(task: unknown): task is PersistenceTask {
   if (!task || typeof task !== 'object') {
@@ -16,16 +17,32 @@ export function isValidTask(task: unknown): task is PersistenceTask {
 
   const t = task as Record<string, unknown>
 
+  // Vérifier la structure de base
+  if (
+    typeof t.id !== 'string' ||
+    typeof t.entityType !== 'string' ||
+    !['create', 'update', 'delete'].includes(t.operation as string) ||
+    typeof t.payload !== 'object' ||
+    t.payload === null ||
+    typeof t.priority !== 'number' ||
+    typeof t.createdAt !== 'number'
+  ) {
+    return false
+  }
+
+  // Vérifier que payload.metadata existe et contient retryCount et maxRetries
+  const payload = t.payload as Record<string, unknown>
+  if (
+    typeof payload.metadata !== 'object' ||
+    payload.metadata === null
+  ) {
+    return false
+  }
+
+  const metadata = payload.metadata as Record<string, unknown>
   return (
-    typeof t.id === 'string' &&
-    typeof t.entityType === 'string' &&
-    ['create', 'update', 'delete'].includes(t.operation as string) &&
-    typeof t.payload === 'object' &&
-    t.payload !== null &&
-    typeof t.priority === 'number' &&
-    typeof t.createdAt === 'number' &&
-    typeof t.retryCount === 'number' &&
-    typeof t.maxRetries === 'number'
+    typeof metadata.retryCount === 'number' &&
+    typeof metadata.maxRetries === 'number'
   )
 }
 

@@ -154,19 +154,29 @@ export function calculateRetryDelay(
 }
 
 /**
+ * Type partiel pour les méthodes de retry qui acceptent soit PersistenceTask
+ * soit un objet avec retryCount et maxRetries (depuis les métadonnées)
+ */
+type TaskWithRetryInfo = Pick<PersistenceTask, 'id' | 'expiresAt'> & {
+  retryCount: number
+  maxRetries: number
+}
+
+/**
  * Gestionnaire de retry centralisé
  */
 export class RetryManager {
   private config: RetryConfig
 
-  constructor(config: Partial<RetryConfig> = {}) {
-    this.config = { ...DEFAULT_RETRY_CONFIG, ...config }
+  constructor(config?: RetryConfig | Partial<RetryConfig>) {
+    this.config = { ...DEFAULT_RETRY_CONFIG, ...(config || {}) }
   }
 
   /**
    * Détermine si une tâche doit être retentée
+   * Accepte soit PersistenceTask soit un objet avec retryCount/maxRetries depuis les métadonnées
    */
-  shouldRetry(error: unknown, task: PersistenceTask): boolean {
+  shouldRetry(error: unknown, task: TaskWithRetryInfo): boolean {
     // 1. Analyser l'erreur pour déterminer si elle est récupérable
     const analysis = analyzeError(error)
     if (!analysis.isRetryable) {
@@ -200,8 +210,9 @@ export class RetryManager {
 
   /**
    * Calcule le délai avant le prochain retry
+   * Accepte soit PersistenceTask soit un objet avec retryCount depuis les métadonnées
    */
-  calculateDelay(task: PersistenceTask): number {
+  calculateDelay(task: Pick<PersistenceTask, 'id'> & { retryCount: number }): number {
     return calculateRetryDelay(task.retryCount, this.config)
   }
 
