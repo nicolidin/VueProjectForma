@@ -10,10 +10,10 @@ import type {
   PersistableEntity,
   PersistenceEvents
 } from './types'
-import { TaskPriority } from './types'
 import type { EventBus } from './eventBus'
 import type { IQueueManager } from './IQueueManager'
-import { createMetadata, updateMetadataOnSuccess, updateMetadataOnError, updateMetadataOnSyncing } from './metadata'
+import { updateMetadataOnSuccess, updateMetadataOnError, updateMetadataOnSyncing } from './metadata'
+import { createTask } from './taskHelpers'
 
 /**
  * Orchestrateur de persistance
@@ -99,32 +99,9 @@ export class PersistenceOrchestrator<T = unknown> {
    * @private
    */
   private enqueueCreate(entityType: string, data: T): void {
-    const metadata = createMetadata(
-      (data as any).frontId || `temp-${Date.now()}`,
-      { maxRetries: this.maxRetries }
-    )
-    const entity: PersistableEntity<T> = { data, metadata }
-
-    const task: PersistenceTask<T> = {
-      id: `create-${entityType}-${metadata.frontId}-${Date.now()}`,
-      entityType,
-      operation: 'create',
-      payload: entity,
-      priority: TaskPriority.NORMAL,
-      createdAt: Date.now()
-    }
-
-    console.log('[PersistenceOrchestrator] Enqueuing create task:', {
-      taskId: task.id,
-      entityType: task.entityType,
-      frontId: metadata.frontId,
-      priority: task.priority
-    })
-    
-    this.queue.enqueue(task)
-    this.eventBus.emit('queue:task-enqueued', { task })
-    
-    console.log('[PersistenceOrchestrator] Task enqueued, queue size:', this.queue.size())
+    const frontId = (data as any).frontId || `temp-${Date.now()}`
+    const task = createTask('create', entityType, data, frontId, this.maxRetries)
+    this.enqueueTask(task)
   }
 
   /**
@@ -132,27 +109,8 @@ export class PersistenceOrchestrator<T = unknown> {
    * @private
    */
   private enqueueUpdate(entityType: string, id: string, updates: Partial<T>): void {
-    // Pour une mise à jour, on a besoin de reconstruire l'entité complète
-    // On utilise les updates comme données partielles
-    const metadata = createMetadata(id, {
-      maxRetries: this.maxRetries
-    })
-    const entity: PersistableEntity<T> = {
-      data: updates as T, // Les updates contiennent les données à mettre à jour
-      metadata
-    }
-
-    const task: PersistenceTask<T> = {
-      id: `update-${entityType}-${id}-${Date.now()}`,
-      entityType,
-      operation: 'update',
-      payload: entity,
-      priority: TaskPriority.NORMAL,
-      createdAt: Date.now()
-    }
-
-    this.queue.enqueue(task)
-    this.eventBus.emit('queue:task-enqueued', { task })
+    const task = createTask('update', entityType, updates, id, this.maxRetries)
+    this.enqueueTask(task)
   }
 
   /**
@@ -160,25 +118,28 @@ export class PersistenceOrchestrator<T = unknown> {
    * @private
    */
   private enqueueDelete(entityType: string, id: string): void {
-    const metadata = createMetadata(id, {
-      maxRetries: this.maxRetries
+    const task = createTask('delete', entityType, {} as T, id, this.maxRetries)
+    this.enqueueTask(task)
+  }
+
+  /**
+   * Met une tâche en queue et émet l'événement
+   * Centralise la logique commune d'enqueue
+   * @private
+   */
+  private enqueueTask(task: PersistenceTask<T>): void {
+    console.log('[PersistenceOrchestrator] Enqueuing task:', {
+      taskId: task.id,
+      entityType: task.entityType,
+      operation: task.operation,
+      frontId: task.payload.metadata.frontId,
+      priority: task.priority
     })
-    const entity: PersistableEntity<T> = {
-      data: {} as T, // Pas besoin de données pour une suppression
-      metadata
-    }
-
-    const task: PersistenceTask<T> = {
-      id: `delete-${entityType}-${id}-${Date.now()}`,
-      entityType,
-      operation: 'delete',
-      payload: entity,
-      priority: TaskPriority.NORMAL,
-      createdAt: Date.now()
-    }
-
+    
     this.queue.enqueue(task)
     this.eventBus.emit('queue:task-enqueued', { task })
+    
+    console.log('[PersistenceOrchestrator] Task enqueued, queue size:', this.queue.size())
   }
 
   /**
