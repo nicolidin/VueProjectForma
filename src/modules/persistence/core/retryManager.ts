@@ -4,13 +4,14 @@
  */
 
 import type { PersistenceTask } from './types'
+import { RETRY_DEFAULTS } from './constants'
 
 /**
  * Configuration du retry avec backoff exponentiel
  */
 export interface RetryConfig {
   /**
-   * Nombre de tentatives maximum (défaut: 3)
+   * Nombre de tentatives maximum (défaut: RETRY_DEFAULTS.MAX_RETRIES)
    * retryCount = 0 : première tentative
    * retryCount = 1 : deuxième tentative (1er retry)
    * retryCount = 2 : troisième tentative (2ème retry)
@@ -19,20 +20,20 @@ export interface RetryConfig {
   maxRetries: number
   
   /**
-   * Délai initial du premier retry en ms (défaut: 30000 = 30 secondes)
+   * Délai initial du premier retry en ms (défaut: RETRY_DEFAULTS.INITIAL_DELAY_MS)
    * C'est le délai avant le premier retry avec backoff exponentiel
    */
   initialDelay: number
   
   /**
-   * Multiplicateur pour le backoff exponentiel (défaut: 4)
+   * Multiplicateur pour le backoff exponentiel (défaut: RETRY_DEFAULTS.MULTIPLIER)
    * Le délai augmente exponentiellement : initialDelay × multiplier^(retryCount-1)
    * Ex: 30s → 120s (2min) → 480s (8min) → 1920s (32min)...
    */
   multiplier: number
   
   /**
-   * Délai maximum en ms (défaut: 600000 = 10 minutes)
+   * Délai maximum en ms (défaut: RETRY_DEFAULTS.MAX_DELAY_MS)
    * Limite le délai maximum entre deux tentatives
    */
   maxDelay?: number
@@ -40,12 +41,13 @@ export interface RetryConfig {
 
 /**
  * Configuration par défaut du retry
+ * Utilise les constantes centralisées pour faciliter la maintenance
  */
 export const DEFAULT_RETRY_CONFIG: RetryConfig = {
-  maxRetries: 3, // 3 tentatives maximum
-  initialDelay: 30000, // 30 secondes pour le premier retry
-  multiplier: 4, // Multiplicateur de 4 : 30s → 120s (2min) → 480s (8min) → 1920s (32min)
-  maxDelay: 600000 // 10 minutes maximum
+  maxRetries: RETRY_DEFAULTS.MAX_RETRIES,
+  initialDelay: RETRY_DEFAULTS.INITIAL_DELAY_MS,
+  multiplier: RETRY_DEFAULTS.MULTIPLIER,
+  maxDelay: RETRY_DEFAULTS.MAX_DELAY_MS
 }
 
 /**
@@ -125,7 +127,7 @@ export function analyzeError(error: unknown): ErrorAnalysis {
  * - retryCount = 2 => delay = initialDelay × multiplier^1
  * - retryCount = 3 => delay = initialDelay × multiplier^2
  * 
- * Exemple avec initialDelay=30000 (30s), multiplier=4:
+ * Exemple avec initialDelay=RETRY_DEFAULTS.INITIAL_DELAY_MS (30s), multiplier=RETRY_DEFAULTS.MULTIPLIER (4):
  * - retryCount = 1 => delay = 30000 × 4^0 = 30000 (30s)
  * - retryCount = 2 => delay = 30000 × 4^1 = 120000 (2min)
  * - retryCount = 3 => delay = 30000 × 4^2 = 480000 (8min)

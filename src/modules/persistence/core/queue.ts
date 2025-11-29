@@ -7,14 +7,15 @@
 import type { PersistenceTask } from './types'
 import { TaskPriority } from './types'
 import type { IQueueManager, TaskProcessor } from './IQueueManager'
+import { QUEUE_DEFAULTS, TIMING } from './constants'
 
 /**
  * Options de configuration de la queue
  */
 export interface QueueOptions {
-  maxConcurrent?: number // Nombre max de tâches en parallèle (défaut: 1 = séquentiel)
-  retryDelay?: number // Délai en ms avant retry (défaut: 1000)
-  maxQueueSize?: number // Taille max de la queue (défaut: Infinity)
+  maxConcurrent?: number // Nombre max de tâches en parallèle (défaut: QUEUE_DEFAULTS.MAX_CONCURRENT)
+  retryDelay?: number // Délai en ms avant retry (défaut: QUEUE_DEFAULTS.RETRY_DELAY_MS)
+  maxQueueSize?: number // Taille max de la queue (défaut: QUEUE_DEFAULTS.MAX_QUEUE_SIZE)
 }
 
 /**
@@ -31,9 +32,9 @@ export class QueueManager<T = unknown> implements IQueueManager<T> {
 
   constructor(options: QueueOptions = {}) {
     this.options = {
-      maxConcurrent: options.maxConcurrent ?? 1,
-      retryDelay: options.retryDelay ?? 1000,
-      maxQueueSize: options.maxQueueSize ?? Infinity
+      maxConcurrent: options.maxConcurrent ?? QUEUE_DEFAULTS.MAX_CONCURRENT,
+      retryDelay: options.retryDelay ?? QUEUE_DEFAULTS.RETRY_DELAY_MS,
+      maxQueueSize: options.maxQueueSize ?? QUEUE_DEFAULTS.MAX_QUEUE_SIZE
     }
   }
 
@@ -156,7 +157,7 @@ export class QueueManager<T = unknown> implements IQueueManager<T> {
 
       // Si la queue est vide mais qu'on attend encore des tâches, on attend un peu
       if (this.queue.length === 0 && this.processing.size > 0) {
-        await new Promise(resolve => setTimeout(resolve, 100))
+        await new Promise(resolve => setTimeout(resolve, TIMING.POLLING_INTERVAL_SHORT))
       }
     }
 

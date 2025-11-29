@@ -16,6 +16,7 @@ import type { IQueueManager } from './IQueueManager'
 import { createMetadata, updateMetadataOnSuccess, updateMetadataOnError, updateMetadataOnSyncing } from './metadata'
 import type { RetryConfig } from './retryManager'
 import { DEFAULT_RETRY_CONFIG } from './retryManager'
+import { TASK_LIFETIME } from './constants'
 
 /**
  * Options de configuration de l'orchestrateur
@@ -25,7 +26,7 @@ export interface OrchestratorOptions {
   /**
    * Durée de vie maximale d'une tâche en ms (optionnel)
    * Si défini, les tâches expireront après cette durée
-   * Ex: 7 jours = 7 * 24 * 60 * 60 * 1000 = 604800000
+   * Par défaut: TASK_LIFETIME.DEFAULT_MAX_AGE_MS (7 jours)
    */
   defaultMaxAge?: number
   /**

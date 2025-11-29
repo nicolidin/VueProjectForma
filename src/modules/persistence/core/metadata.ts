@@ -4,6 +4,7 @@
  */
 
 import type { PersistenceMetadata, SyncStatus } from './types'
+import { RETRY_DEFAULTS } from './constants'
 
 /**
  * Crée des métadonnées par défaut pour une nouvelle entité
@@ -16,7 +17,7 @@ export function createMetadata(
     frontId,
     syncStatus: 'pending',
     retryCount: 0,
-    maxRetries: 3,
+    maxRetries: RETRY_DEFAULTS.MAX_RETRIES,
     createdAt: Date.now(),
     ...options
   }

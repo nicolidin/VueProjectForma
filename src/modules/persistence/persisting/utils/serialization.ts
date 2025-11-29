@@ -4,6 +4,7 @@
  */
 
 import type { PersistenceTask } from '../../core/types'
+import { TASK_LIFETIME } from '../../core/constants'
 
 /**
  * Vérifie si une tâche est valide (structure correcte)
@@ -37,8 +38,9 @@ export function filterValidTasks(tasks: unknown[]): PersistenceTask[] {
 
 /**
  * Vérifie si une tâche est expirée (optionnel, pour nettoyer les vieilles tâches)
+ * Utilise TASK_LIFETIME.DEFAULT_MAX_AGE_MS par défaut
  */
-export function isTaskExpired(task: PersistenceTask, maxAge: number = 7 * 24 * 60 * 60 * 1000): boolean {
+export function isTaskExpired(task: PersistenceTask, maxAge: number = TASK_LIFETIME.DEFAULT_MAX_AGE_MS): boolean {
   const age = Date.now() - task.createdAt
   return age > maxAge
 }

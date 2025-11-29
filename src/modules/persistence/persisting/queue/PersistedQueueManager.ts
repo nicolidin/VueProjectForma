@@ -8,14 +8,15 @@ import type { PersistenceTask } from '../../core/types'
 import { TaskPriority } from '../../core/types'
 import type { IQueueManager, TaskProcessor } from '../../core/IQueueManager'
 import { RetryManager, type RetryConfig } from '../../core/retryManager'
+import { TIMING, QUEUE_DEFAULTS } from '../../core/constants'
 import { usePersistenceQueueStore } from '../store'
 
 /**
  * Options de configuration de la queue
  */
 export interface PersistedQueueOptions {
-  maxConcurrent?: number // Nombre max de tâches en parallèle (défaut: 1 = séquentiel)
-  maxQueueSize?: number // Taille max de la queue (défaut: Infinity)
+  maxConcurrent?: number // Nombre max de tâches en parallèle (défaut: QUEUE_DEFAULTS.MAX_CONCURRENT)
+  maxQueueSize?: number // Taille max de la queue (défaut: QUEUE_DEFAULTS.MAX_QUEUE_SIZE)
   autoStart?: boolean // Démarrer automatiquement le traitement au démarrage (défaut: true)
   retryConfig?: Partial<RetryConfig> // Configuration du retry (défaut: backoff exponentiel en minutes)
 }
@@ -37,8 +38,8 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
 
   constructor(options: PersistedQueueOptions = {}) {
     this.options = {
-      maxConcurrent: options.maxConcurrent ?? 1,
-      maxQueueSize: options.maxQueueSize ?? Infinity,
+      maxConcurrent: options.maxConcurrent ?? QUEUE_DEFAULTS.MAX_CONCURRENT,
+      maxQueueSize: options.maxQueueSize ?? QUEUE_DEFAULTS.MAX_QUEUE_SIZE,
       autoStart: options.autoStart ?? true,
       retryConfig: options.retryConfig
     }
@@ -239,15 +240,15 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
       if (nextRetryAt) {
         const waitTime = nextRetryAt - now
         if (waitTime > 0) {
-          console.log(`[PersistedQueueManager] Waiting ${Math.round(waitTime / 1000)}s until next retry at ${new Date(nextRetryAt).toISOString()}`)
-          await new Promise(resolve => setTimeout(resolve, Math.min(waitTime, 5000))) // Max 5s pour éviter de bloquer trop longtemps
+          console.log(`[PersistedQueueManager] Waiting ${Math.round(waitTime / TIMING.MS_PER_SECOND)}s until next retry at ${new Date(nextRetryAt).toISOString()}`)
+          await new Promise(resolve => setTimeout(resolve, Math.min(waitTime, TIMING.POLLING_INTERVAL_MAX_WAIT)))
         }
       } else if (queueStore.queueSize === 0 && this.processing.size > 0) {
         // Si la queue est vide mais qu'on attend encore des tâches, on attend un peu
-        await new Promise(resolve => setTimeout(resolve, 100))
+        await new Promise(resolve => setTimeout(resolve, TIMING.POLLING_INTERVAL_SHORT))
       } else if (queueStore.queueSize > 0 && tasksToProcess.length === 0) {
         // Si on a des tâches mais qu'elles ne sont pas prêtes (retryAt dans le futur), attendre un peu
-        await new Promise(resolve => setTimeout(resolve, 1000)) // Vérifier toutes les secondes
+        await new Promise(resolve => setTimeout(resolve, TIMING.POLLING_INTERVAL_NORMAL))
       }
     }
 
@@ -321,7 +322,7 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
       
       // Calculer le délai avec backoff exponentiel
       const delay = this.retryManager.calculateDelay(task)
-      const delayInMinutes = Math.round(delay / 60000 * 10) / 10 // Arrondir à 1 décimale
+      const delayInMinutes = Math.round(delay / TIMING.MS_PER_MINUTE * 10) / 10 // Arrondir à 1 décimale
       
       // Calculer le timestamp de retry (maintenant + délai)
       const retryAt = Date.now() + delay
