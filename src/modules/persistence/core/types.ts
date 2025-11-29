@@ -61,6 +61,17 @@ export interface PersistenceTask<T = unknown> {
   createdAt: number
   retryCount: number
   maxRetries: number
+  /**
+   * Timestamp d'expiration de la tâche (optionnel)
+   * Si défini, la tâche ne sera plus retentée après cette date
+   * Utile pour éviter de garder des tâches obsolètes indéfiniment
+   */
+  expiresAt?: number
+  /**
+   * Âge maximum de la tâche en ms (optionnel)
+   * Si défini, expiresAt sera calculé automatiquement à createdAt + maxAge
+   */
+  maxAge?: number
 }
 
 /**
@@ -84,6 +95,8 @@ export type PersistenceEvents<T = unknown> = {
   'queue:task-processing': { task: PersistenceTask<T> }
   'queue:task-completed': { task: PersistenceTask<T> }
   'queue:task-failed': { task: PersistenceTask<T>; error: unknown }
+  'queue:task-failed-permanently': { task: PersistenceTask<T>; error: unknown }
+  'queue:task-expired': { task: PersistenceTask<T> }
 }
 
 /**

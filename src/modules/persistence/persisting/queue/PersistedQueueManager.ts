@@ -7,6 +7,7 @@
 import type { PersistenceTask } from '../../core/types'
 import { TaskPriority } from '../../core/types'
 import type { IQueueManager, TaskProcessor } from '../../core/IQueueManager'
+import { RetryManager, type RetryConfig } from '../../core/retryManager'
 import { usePersistenceQueueStore } from '../store'
 
 /**
@@ -14,32 +15,9 @@ import { usePersistenceQueueStore } from '../store'
  */
 export interface PersistedQueueOptions {
   maxConcurrent?: number // Nombre max de tâches en parallèle (défaut: 1 = séquentiel)
-  retryDelay?: number // Délai en ms avant retry (défaut: 1000)
   maxQueueSize?: number // Taille max de la queue (défaut: Infinity)
   autoStart?: boolean // Démarrer automatiquement le traitement au démarrage (défaut: true)
-  exponentialBackoffBase?: number // Base pour le backoff exponentiel après maxRetries (défaut: 30000 = 30s)
-}
-
-/**
- * Calcule le délai de retry avec backoff exponentiel
- * - Pour les 3 premières tentatives : délai normal (retryDelay)
- * - Après 3 tentatives : backoff exponentiel (30s, 60s, 120s...)
- * @private
- */
-function calculateRetryDelay(
-  retryCount: number,
-  maxRetries: number,
-  baseRetryDelay: number,
-  exponentialBackoffBase: number
-): number {
-  if (retryCount <= maxRetries) {
-    // Retries rapides pour les premières tentatives
-    return baseRetryDelay
-  }
-  
-  // Backoff exponentiel après maxRetries
-  const exponentialAttempts = retryCount - maxRetries
-  return exponentialBackoffBase * Math.pow(2, exponentialAttempts - 1)
+  retryConfig?: Partial<RetryConfig> // Configuration du retry (défaut: backoff exponentiel en minutes)
 }
 
 /**
@@ -49,18 +27,24 @@ function calculateRetryDelay(
  */
 export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
   private processing: Set<string> = new Set()
-  private options: Required<Omit<PersistedQueueOptions, 'autoStart'>> & { autoStart: boolean }
+  private options: Required<Omit<PersistedQueueOptions, 'autoStart' | 'retryConfig'>> & { 
+    autoStart: boolean
+    retryConfig?: Partial<RetryConfig>
+  }
+  private retryManager: RetryManager
   private processor?: TaskProcessor<T>
   private isRunning = false
 
   constructor(options: PersistedQueueOptions = {}) {
     this.options = {
       maxConcurrent: options.maxConcurrent ?? 1,
-      retryDelay: options.retryDelay ?? 1000,
       maxQueueSize: options.maxQueueSize ?? Infinity,
       autoStart: options.autoStart ?? true,
-      exponentialBackoffBase: options.exponentialBackoffBase ?? 30000
+      retryConfig: options.retryConfig
     }
+
+    // Initialiser le RetryManager avec la configuration
+    this.retryManager = new RetryManager(options.retryConfig)
 
     // Ne pas appeler usePersistenceQueueStore() dans le constructeur
     // car Pinia n'est peut-être pas encore initialisé
@@ -246,7 +230,7 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
 
   /**
    * Traite une tâche
-   * Offline-first : la tâche reste dans la queue jusqu'à succès
+   * Offline-first : la tâche reste dans la queue jusqu'à succès (si erreur récupérable)
    * @private
    */
   private async processTask(task: PersistenceTask<T>): Promise<void> {
@@ -265,6 +249,21 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
     this.processing.add(task.id)
     const queueStore = this.getQueueStore()
 
+    // Vérifier l'expiration de la tâche avant traitement
+    if (task.expiresAt && Date.now() > task.expiresAt) {
+      console.warn(`[PersistedQueueManager] Task ${task.id} expired, removing from queue`)
+      queueStore.dequeue(task.id)
+      this.processing.delete(task.id)
+      // Émettre un événement d'expiration si nécessaire
+      return
+    }
+
+    // Calculer expiresAt si maxAge est défini mais pas expiresAt
+    if (task.maxAge && !task.expiresAt) {
+      task.expiresAt = task.createdAt + task.maxAge
+      queueStore.updateTask(task.id, { expiresAt: task.expiresAt })
+    }
+
     try {
       await this.processor(task)
       
@@ -272,30 +271,38 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
       queueStore.dequeue(task.id)
       console.log('[PersistedQueueManager] Task completed successfully:', task.id)
     } catch (error) {
-      // ❌ Tâche échouée : toujours remettre en queue avec backoff exponentiel
-      // Offline-first : on ne supprime jamais une tâche, on la retente indéfiniment
+      // Analyser l'erreur et déterminer si on doit retenter
+      const shouldRetry = this.retryManager.shouldRetry(error, task)
+      
+      if (!shouldRetry) {
+        // Erreur non récupérable ou expiration : supprimer de la queue
+        const analysis = this.retryManager.analyzeError(error)
+        console.error(`[PersistedQueueManager] Task ${task.id} failed permanently:`, {
+          code: analysis.code,
+          message: analysis.message,
+          httpStatus: analysis.httpStatus,
+          retryCount: task.retryCount
+        })
+        
+        queueStore.dequeue(task.id)
+        // L'événement 'queue:task-failed-permanently' sera émis par l'orchestrator
+        return
+      }
+
+      // ❌ Erreur récupérable : retry avec backoff exponentiel
       task.retryCount++
       
-      console.warn('[PersistedQueueManager] Task failed:', {
+      // Calculer le délai avec backoff exponentiel (en minutes)
+      const delay = this.retryManager.calculateDelay(task)
+      const delayInMinutes = Math.round(delay / 60000 * 10) / 10 // Arrondir à 1 décimale
+      
+      console.warn('[PersistedQueueManager] Task failed, will retry:', {
         taskId: task.id,
         retryCount: task.retryCount,
+        delayMs: delay,
+        delayMinutes: delayInMinutes,
         error: error instanceof Error ? error.message : String(error)
       })
-      
-      // Calculer le délai avec backoff exponentiel
-      const delay = calculateRetryDelay(
-        task.retryCount,
-        task.maxRetries,
-        this.options.retryDelay,
-        this.options.exponentialBackoffBase
-      )
-      
-      // Log pour les retries après maxRetries (backoff exponentiel)
-      if (task.retryCount > task.maxRetries) {
-        console.log(
-          `[PersistedQueueManager] Task ${task.id} retry ${task.retryCount} after ${delay}ms (exponential backoff)`
-        )
-      }
       
       // Attendre avant de retenter
       await new Promise(resolve => setTimeout(resolve, delay))
@@ -309,7 +316,7 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
         queueStore.enqueue(task)
       }
       
-      console.log('[PersistedQueueManager] Task scheduled for retry:', task.id)
+      console.log(`[PersistedQueueManager] Task scheduled for retry ${task.retryCount} after ${delayInMinutes} minutes:`, task.id)
     } finally {
       this.processing.delete(task.id)
       console.log('[PersistedQueueManager] processTask finished:', task.id)

@@ -4,7 +4,7 @@ import { merge } from 'lodash-es'
 import type {NoteType} from "@/types/NoteType.ts";
 import type {TagType} from "@/types/TagType.ts";
 import {generateRandomUuid} from "vue-lib-exo-corrected";
-import { getPersistenceEventBus } from "@/services/persistence/usePersistence.ts";
+import { getPersistenceEventBus } from "@/modules/persistence/usePersistence.ts";
 
 export const useNotesStore = defineStore('notes',
   () => {

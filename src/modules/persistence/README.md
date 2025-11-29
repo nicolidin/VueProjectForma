@@ -1,4 +1,4 @@
-# Service de Persistance Générique
+# Module de Persistance Générique
 
 ## Architecture
 
@@ -6,8 +6,10 @@ Ce module implémente une architecture de persistance générique basée sur **E
 
 ### Structure
 
+Le module est **générique et réutilisable**. Les stratégies spécifiques au projet sont définies en dehors du module.
+
 ```
-persistence/
+modules/persistence/          # Module générique (réutilisable)
 ├── core/
 │   ├── types.ts              # Types génériques + metadata de persistance
 │   ├── metadata.ts           # Helpers pour gérer les métadonnées
@@ -15,11 +17,17 @@ persistence/
 │   ├── queue.ts              # QueueManager avec séquençage, retry, priorité
 │   ├── orchestrator.ts       # Orchestrateur générique
 │   └── index.ts              # Exports centralisés
-├── strategies/
-│   ├── RestApiStrategy.ts    # Stratégies REST pour notes et tags
-│   └── index.ts              # Exports centralisés
+├── persisting/               # Persistance via Pinia/localStorage
+│   ├── queue/                # QueueManager persisté
+│   ├── store/                # Store Pinia pour la queue
+│   └── utils/                # Utilitaires de sérialisation
 ├── usePersistence.ts         # Composable Vue pour initialisation
 └── index.ts                  # Exports centralisés
+
+persistence/                  # Configurations spécifiques au projet
+└── strategies/
+    ├── RestApiStrategy.ts    # Stratégies REST pour notes et tags (spécifiques au projet)
+    └── index.ts              # Exports centralisés
 ```
 
 ## Principe de Fonctionnement
@@ -62,21 +70,29 @@ Chaque entité a des métadonnées de persistance :
 
 ### 6. **Composable Vue** (`usePersistence.ts`)
 - Initialise le système de persistance (EventBus, QueueManager, Orchestrator)
-- Enregistre les stratégies pour chaque type d'entité
+- Accepte les stratégies en paramètre (injection de dépendances)
 - Doit être appelé une seule fois au niveau de l'application
+- Les stratégies sont définies en dehors du module (spécifiques au projet)
 
 ## Utilisation
 
 ### Initialisation (déjà fait dans `App.vue`)
 
 ```typescript
-import { usePersistence } from '@/services/persistence'
+import { usePersistence } from '@/modules/persistence'
+import { NoteRestApiStrategy, TagRestApiStrategy } from '@/persistence/strategies'
 import { useNotesStore } from '@/stores/notes'
 
 // Dans App.vue
-usePersistence() // Initialise EventBus, QueueManager et Orchestrator
+// Initialise EventBus, QueueManager et Orchestrator avec les stratégies spécifiques au projet
+usePersistence({
+  note: new NoteRestApiStrategy(),
+  tag: new TagRestApiStrategy()
+})
 notesStore.initPersistenceListeners() // Le store écoute les événements de persistance
 ```
+<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>
+read_file
 
 ### Émission d'événements depuis le store
 
@@ -181,8 +197,12 @@ function addTag(tag: TagType) {
 
 ## Ajout d'un Nouveau Type d'Entité
 
-1. Créer une stratégie dans `strategies/` :
+1. Créer une stratégie dans `persistence/strategies/` (spécifique au projet) :
 ```typescript
+import type { PersistenceStrategy, PersistableEntity } from '@/modules/persistence/core/types'
+import { createMyEntity, updateMyEntity, deleteMyEntity } from '@/api/myEntityApi'
+import type { MyEntityType } from '@/types/MyEntityType'
+
 export class MyEntityRestApiStrategy implements PersistenceStrategy<MyEntityType> {
   async persistCreate(entity: PersistableEntity<MyEntityType>): Promise<...> { ... }
   async persistUpdate(entity: PersistableEntity<MyEntityType>): Promise<...> { ... }
@@ -190,9 +210,14 @@ export class MyEntityRestApiStrategy implements PersistenceStrategy<MyEntityType
 }
 ```
 
-2. Enregistrer la stratégie dans `usePersistence.ts` :
+2. Enregistrer la stratégie lors de l'initialisation dans `App.vue` :
 ```typescript
-orchestrator.registerStrategy('myEntity', new MyEntityRestApiStrategy())
+import { usePersistence } from '@/modules/persistence'
+import { MyEntityRestApiStrategy } from '@/persistence/strategies'
+
+usePersistence({
+  myEntity: new MyEntityRestApiStrategy()
+})
 ```
 
 3. Émettre des événements depuis le store :

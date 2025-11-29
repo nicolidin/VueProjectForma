@@ -3,15 +3,31 @@ import {Layout} from "vue-lib-exo-corrected";
 import {useNotesStore} from "./stores/notes.ts";
 import {useAuthStore} from "./stores/auth.ts";
 import {computed, onMounted} from "vue";
-import { usePersistence } from "@/services/persistence";
+import { usePersistence } from "@/modules/persistence";
+import { NoteRestApiStrategy, TagRestApiStrategy } from "@/persistence/strategies";
 
 const notesStore = useNotesStore();
 const authStore = useAuthStore();
 
-// ─── Initialiser le service de persistance ────────────────────────────────────────
-// Ce service écoute les événements du store et persiste automatiquement via l'API
+// ─── Initialiser le module de persistance ────────────────────────────────────────
+// Ce module écoute les événements du store et persiste automatiquement via l'API
 // Il est initialisé une seule fois au niveau de l'application
-usePersistence();
+// Les stratégies REST sont spécifiques au projet et sont passées en paramètre
+usePersistence({
+  strategies: {
+    note: new NoteRestApiStrategy(),
+    tag: new TagRestApiStrategy()
+  },
+  options: {
+    retryConfig: {
+      maxRetries: 3, // 3 tentatives par défaut
+      maxFastRetries: 0, // Pas de retries rapides
+      exponentialBackoffInitialDelay: 240000, // 4 minutes
+      backoffMultiplier: 4, // Multiplicateur de 4
+      maxDelay: 6000000 // 100 minutes maximum
+    },
+  }
+});
 
 // ─── Initialiser les listeners de persistance dans le store ────────────────────────
 // Le store écoute les événements de persistance pour mettre à jour les _id MongoDB

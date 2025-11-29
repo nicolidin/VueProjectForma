@@ -14,13 +14,33 @@ import { TaskPriority } from './types'
 import type { EventBus } from './eventBus'
 import type { IQueueManager } from './IQueueManager'
 import { createMetadata, updateMetadataOnSuccess, updateMetadataOnError, updateMetadataOnSyncing } from './metadata'
+import type { RetryConfig } from './retryManager'
+import { DEFAULT_RETRY_CONFIG } from './retryManager'
 
 /**
  * Options de configuration de l'orchestrateur
  */
 export interface OrchestratorOptions {
   defaultPriority?: TaskPriority
-  defaultMaxRetries?: number
+  /**
+   * Durée de vie maximale d'une tâche en ms (optionnel)
+   * Si défini, les tâches expireront après cette durée
+   * Ex: 7 jours = 7 * 24 * 60 * 60 * 1000 = 604800000
+   */
+  defaultMaxAge?: number
+  /**
+   * Configuration du retry globale (timing, backoff exponentiel, nombre de tentatives)
+   * Si non défini, utilise DEFAULT_RETRY_CONFIG
+   */
+  retryConfig?: Partial<RetryConfig>
+  /**
+   * Configuration du retry spécifique par type d'entité
+   * Permet d'override la configuration globale pour certains types d'entités
+   * Ex: { note: { maxRetries: 5 }, tag: { maxRetries: 2 } }
+   */
+  retryConfigByEntityType?: {
+    [entityType: string]: Partial<RetryConfig>
+  }
 }
 
 /**
@@ -31,7 +51,9 @@ export class PersistenceOrchestrator<T = unknown> {
   private eventBus: EventBus<PersistenceEvents<T>>
   private queue: IQueueManager<T>
   private strategies: Map<string, PersistenceStrategy<T>> = new Map()
-  private options: Required<OrchestratorOptions>
+  private options: Required<Omit<OrchestratorOptions, 'defaultMaxAge' | 'retryConfig' | 'retryConfigByEntityType'>> & 
+    Pick<OrchestratorOptions, 'defaultMaxAge' | 'retryConfig' | 'retryConfigByEntityType'>
+  private globalRetryConfig: RetryConfig
   private unsubscribeFunctions: Array<() => void> = []
 
   constructor(
@@ -43,8 +65,13 @@ export class PersistenceOrchestrator<T = unknown> {
     this.queue = queue
     this.options = {
       defaultPriority: options.defaultPriority ?? TaskPriority.NORMAL,
-      defaultMaxRetries: options.defaultMaxRetries ?? 3
+      defaultMaxAge: options.defaultMaxAge,
+      retryConfig: options.retryConfig,
+      retryConfigByEntityType: options.retryConfigByEntityType
     }
+    
+    // Fusionner la config globale avec les défauts
+    this.globalRetryConfig = { ...DEFAULT_RETRY_CONFIG, ...(options.retryConfig || {}) }
 
     this.setupEventListeners()
     // Ne pas appeler setupQueueProcessor() ici pour éviter la race condition
@@ -106,6 +133,19 @@ export class PersistenceOrchestrator<T = unknown> {
   }
 
   /**
+   * Obtient la configuration retry pour un type d'entité donné
+   * Utilise la configuration spécifique si disponible, sinon la configuration globale
+   * @private
+   */
+  private getRetryConfigForEntityType(entityType: string): RetryConfig {
+    if (this.options.retryConfigByEntityType && this.options.retryConfigByEntityType[entityType]) {
+      // Fusionner la config globale avec la config spécifique
+      return { ...this.globalRetryConfig, ...this.options.retryConfigByEntityType[entityType] }
+    }
+    return this.globalRetryConfig
+  }
+
+  /**
    * Met en queue une création
    * @private
    */
@@ -113,6 +153,7 @@ export class PersistenceOrchestrator<T = unknown> {
     const metadata = createMetadata((data as any).frontId || `temp-${Date.now()}`)
     const entity: PersistableEntity<T> = { data, metadata }
 
+    const retryConfig = this.getRetryConfigForEntityType(entityType)
     const task: PersistenceTask<T> = {
       id: `create-${entityType}-${metadata.frontId}-${Date.now()}`,
       entityType,
@@ -121,7 +162,11 @@ export class PersistenceOrchestrator<T = unknown> {
       priority: this.options.defaultPriority,
       createdAt: Date.now(),
       retryCount: 0,
-      maxRetries: this.options.defaultMaxRetries
+      maxRetries: retryConfig.maxRetries,
+      ...(this.options.defaultMaxAge && {
+        maxAge: this.options.defaultMaxAge,
+        expiresAt: Date.now() + this.options.defaultMaxAge
+      })
     }
 
     console.log('[PersistenceOrchestrator] Enqueuing create task:', {
@@ -150,6 +195,7 @@ export class PersistenceOrchestrator<T = unknown> {
       metadata
     }
 
+    const retryConfig = this.getRetryConfigForEntityType(entityType)
     const task: PersistenceTask<T> = {
       id: `update-${entityType}-${id}-${Date.now()}`,
       entityType,
@@ -158,7 +204,11 @@ export class PersistenceOrchestrator<T = unknown> {
       priority: this.options.defaultPriority,
       createdAt: Date.now(),
       retryCount: 0,
-      maxRetries: this.options.defaultMaxRetries
+      maxRetries: retryConfig.maxRetries,
+      ...(this.options.defaultMaxAge && {
+        maxAge: this.options.defaultMaxAge,
+        expiresAt: Date.now() + this.options.defaultMaxAge
+      })
     }
 
     this.queue.enqueue(task)
@@ -176,6 +226,7 @@ export class PersistenceOrchestrator<T = unknown> {
       metadata
     }
 
+    const retryConfig = this.getRetryConfigForEntityType(entityType)
     const task: PersistenceTask<T> = {
       id: `delete-${entityType}-${id}-${Date.now()}`,
       entityType,
@@ -184,7 +235,11 @@ export class PersistenceOrchestrator<T = unknown> {
       priority: this.options.defaultPriority,
       createdAt: Date.now(),
       retryCount: 0,
-      maxRetries: this.options.defaultMaxRetries
+      maxRetries: retryConfig.maxRetries,
+      ...(this.options.defaultMaxAge && {
+        maxAge: this.options.defaultMaxAge,
+        expiresAt: Date.now() + this.options.defaultMaxAge
+      })
     }
 
     this.queue.enqueue(task)
@@ -254,6 +309,7 @@ export class PersistenceOrchestrator<T = unknown> {
       this.eventBus.emit('queue:task-failed', { task, error })
 
       // Re-throw pour que la queue puisse gérer le retry
+      // La queue utilisera RetryManager pour déterminer si l'erreur est récupérable
       throw error
     }
   }

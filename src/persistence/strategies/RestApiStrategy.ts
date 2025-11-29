@@ -1,9 +1,9 @@
 /**
- * Stratégie de persistance REST API générique
- * Code pur, respecte le principe SOC
+ * Stratégie de persistance REST API spécifique au projet
+ * Utilise les APIs du projet (noteApi, tagApi)
  */
 
-import type { PersistenceStrategy, PersistableEntity } from '../core/types'
+import type { PersistenceStrategy, PersistableEntity } from '@/modules/persistence/core/types'
 import { createNote, updateNote, deleteNote } from '@/api/noteApi'
 import { createTag, updateTag, deleteTag } from '@/api/tagApi'
 import type { NoteType } from '@/types/NoteType'
