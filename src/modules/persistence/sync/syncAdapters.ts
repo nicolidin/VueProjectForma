@@ -6,6 +6,7 @@
 
 import type { EventBus } from '../core/eventBus'
 import type { PersistenceEvents } from '../core/types'
+import { PERSISTENCE_EVENTS } from '../core/events'
 
 /**
  * Adapter de synchronisation pour un type d'entité
@@ -67,7 +68,7 @@ export class SyncAdaptersManager {
    */
   private setupListeners(): void {
     // Écouter les événements de persistance réussie
-    this.eventBus.on('entity:persisted', ({ entityType, original, persisted }) => {
+    this.eventBus.on(PERSISTENCE_EVENTS.PERSISTED, ({ entityType, original, persisted }) => {
       const adapter = this.adapters.get(entityType)
       if (adapter) {
         try {
@@ -79,7 +80,7 @@ export class SyncAdaptersManager {
     })
     
     // Écouter les erreurs de persistance
-    this.eventBus.on('entity:persist-error', ({ entityType, task, error }) => {
+    this.eventBus.on(PERSISTENCE_EVENTS.PERSIST_ERROR, ({ entityType, task, error }) => {
       const adapter = this.adapters.get(entityType)
       if (adapter?.onError) {
         try {

@@ -6,6 +6,7 @@ import type {TagType} from "@/types/TagType.ts";
 import {generateRandomUuid} from "vue-lib-exo-corrected";
 import { getPersistenceEventBus } from "@/modules/persistence/usePersistence.ts";
 import type { SyncAdapter } from "@/modules/persistence/sync/syncAdapters";
+import { ENTITY_EVENTS } from "@/modules/persistence/core/events";
 
 export const useNotesStore = defineStore('notes',
   () => {
@@ -62,7 +63,7 @@ export const useNotesStore = defineStore('notes',
       })
       notes.value.push(note)
       // Émettre un événement pour déclencher la persistance
-      eventBus.emit('entity:created', { entityType: 'note', data: note })
+      eventBus.emit(ENTITY_EVENTS.CREATED, { entityType: 'note', data: note })
       console.log('[NotesStore] entity:created event emitted for note:', note.frontId)
     }
 
@@ -71,7 +72,7 @@ export const useNotesStore = defineStore('notes',
       if (index !== -1) {
         notes.value[index] = merge({}, notes.value[index], updatedNote)
         // Émettre un événement pour déclencher la persistance
-        eventBus.emit('entity:updated', { entityType: 'note', id, updates: updatedNote })
+        eventBus.emit(ENTITY_EVENTS.UPDATED, { entityType: 'note', id, updates: updatedNote })
       }
     }
 
@@ -106,7 +107,7 @@ export const useNotesStore = defineStore('notes',
       if (index !== -1) {
         notes.value.splice(index, 1)
         // Émettre un événement pour déclencher la persistance
-        eventBus.emit('entity:deleted', { entityType: 'note', id })
+        eventBus.emit(ENTITY_EVENTS.DELETED, { entityType: 'note', id })
       }
     }
 
@@ -121,7 +122,7 @@ export const useNotesStore = defineStore('notes',
       }
       tags.value.push(newTag)
       // Émettre un événement pour déclencher la persistance
-      eventBus.emit('entity:created', { entityType: 'tag', data: newTag })
+      eventBus.emit(ENTITY_EVENTS.CREATED, { entityType: 'tag', data: newTag })
       return newTag
     }
 
@@ -130,7 +131,7 @@ export const useNotesStore = defineStore('notes',
       if (index !== -1) {
         tags.value[index] = merge({}, tags.value[index], updatedTag)
         // Émettre un événement pour déclencher la persistance
-        eventBus.emit('entity:updated', { entityType: 'tag', id, updates: updatedTag })
+        eventBus.emit(ENTITY_EVENTS.UPDATED, { entityType: 'tag', id, updates: updatedTag })
       }
     }
 
@@ -139,7 +140,7 @@ export const useNotesStore = defineStore('notes',
       if (index !== -1) {
         tags.value.splice(index, 1)
         // Émettre un événement pour déclencher la persistance
-        eventBus.emit('entity:deleted', { entityType: 'tag', id })
+        eventBus.emit(ENTITY_EVENTS.DELETED, { entityType: 'tag', id })
       }
     }
 

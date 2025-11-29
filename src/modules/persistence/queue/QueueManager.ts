@@ -5,7 +5,6 @@
  */
 
 import type { PersistenceTask } from '../core/types'
-import { TaskPriority } from '../core/types'
 import { RetryManager, type RetryConfig } from '../core/retryManager'
 import { TIMING, QUEUE_DEFAULTS } from '../core/constants'
 import { updateMetadataOnError } from '../core/metadata'
@@ -15,6 +14,83 @@ import { usePersistenceQueueStore } from './store'
  * Callback appelé quand une tâche est traitée
  */
 export type TaskProcessor<T = unknown> = (task: PersistenceTask<T>) => Promise<void>
+
+/**
+ * Helpers purs pour la logique de queue (testables facilement)
+ */
+class QueueHelpers {
+  /**
+   * Sélectionne les tâches prêtes à être traitées (PURE)
+   */
+  static getReadyTasks<T>(
+    sortedTasks: PersistenceTask<T>[],
+    processing: Set<string>,
+    maxConcurrent: number,
+    now: number
+  ): PersistenceTask<T>[] {
+    const ready: PersistenceTask<T>[] = []
+    
+    for (const task of sortedTasks) {
+      if (ready.length >= maxConcurrent || processing.size >= maxConcurrent) break
+      if (processing.has(task.id)) continue
+      
+      const isReady = !task.retryAt || task.retryAt <= now
+      if (isReady) {
+        ready.push(task)
+      }
+    }
+    
+    return ready
+  }
+
+  /**
+   * Calcule le prochain temps de retry (PURE)
+   */
+  static getNextRetryTime<T>(
+    sortedTasks: PersistenceTask<T>[],
+    now: number
+  ): number | null {
+    const retryTimes = sortedTasks
+      .filter(task => task.retryAt && task.retryAt > now)
+      .map(task => task.retryAt!)
+      .sort((a, b) => a - b)
+    
+    return retryTimes[0] || null
+  }
+
+  /**
+   * Calcule le retryAt pour une tâche (PURE)
+   */
+  static calculateRetryAt<T>(
+    task: PersistenceTask<T>,
+    retryManager: RetryManager,
+    now: number
+  ): number {
+    const delay = retryManager.calculateDelay({
+      ...task,
+      retryCount: task.payload.metadata.retryCount,
+      maxRetries: task.payload.metadata.maxRetries
+    })
+    return now + delay
+  }
+
+  /**
+   * Vérifie si une tâche est expirée (PURE)
+   */
+  static isTaskExpired<T>(task: PersistenceTask<T>, now: number): boolean {
+    return task.expiresAt ? now > task.expiresAt : false
+  }
+
+  /**
+   * Calcule expiresAt si maxAge est défini (PURE)
+   */
+  static calculateExpiresAt<T>(task: PersistenceTask<T>): number | undefined {
+    if (task.maxAge && !task.expiresAt) {
+      return task.createdAt + task.maxAge
+    }
+    return task.expiresAt
+  }
+}
 
 /**
  * Queue Manager qui utilise le store Pinia pour la persistance
@@ -47,15 +123,9 @@ export class PersistedQueueManager<T = unknown> {
 
   /**
    * Définit le processeur de tâches
-   * Note: Ne démarre pas automatiquement le traitement pour éviter les race conditions
-   * Le traitement sera démarré explicitement via restart() après l'initialisation complète
    */
   setProcessor(processor: TaskProcessor<T>): void {
-    console.log('[PersistedQueueManager] setProcessor called')
     this.processor = processor
-    const queueStore = this.getQueueStore()
-    console.log('[PersistedQueueManager] Processor set, queue size:', queueStore.queueSize, 'isRunning:', this.isRunning)
-    // Ne pas démarrer automatiquement ici - sera fait explicitement via restart() après init complète
   }
 
   /**
@@ -67,28 +137,10 @@ export class PersistedQueueManager<T = unknown> {
       throw new Error(`Queue is full (max size: ${this.maxQueueSize})`)
     }
 
-    console.log('[PersistedQueueManager] enqueue called:', {
-      taskId: task.id,
-      entityType: task.entityType,
-      operation: task.operation,
-      currentQueueSize: queueStore.queueSize,
-      hasProcessor: !!this.processor,
-      isRunning: this.isRunning
-    })
-
-    // Utiliser le store pour persister automatiquement
     queueStore.enqueue(task)
-    
-    console.log('[PersistedQueueManager] Task added to store, new queue size:', queueStore.queueSize)
 
-    // Démarrer le traitement si pas déjà en cours
     if (!this.isRunning && this.processor) {
-      console.log('[PersistedQueueManager] Starting processing...')
       this.startProcessing()
-    } else if (!this.processor) {
-      console.warn('[PersistedQueueManager] Processor not set yet, task will wait')
-    } else {
-      console.log('[PersistedQueueManager] Already processing, task will be picked up')
     }
   }
 
@@ -128,191 +180,146 @@ export class PersistedQueueManager<T = unknown> {
   }
 
   /**
-   * Démarre le traitement de la queue
+   * Démarre le traitement de la queue (simplifié avec helpers purs)
    * @private
    */
   private async startProcessing(): Promise<void> {
-    if (this.isRunning || !this.processor) {
-      console.log('[PersistedQueueManager] startProcessing aborted:', { 
-        isRunning: this.isRunning, 
-        hasProcessor: !!this.processor 
-      })
-      return
-    }
+    if (this.isRunning || !this.processor) return
 
-    console.log('[PersistedQueueManager] startProcessing started')
     this.isRunning = true
 
     while (true) {
       const queueStore = this.getQueueStore()
       
       if (queueStore.queueSize === 0 && this.processing.size === 0) {
-        console.log('[PersistedQueueManager] Queue empty, stopping processing')
         break
       }
 
-      // Récupérer les tâches depuis le store (triées par priorité)
       const sortedTasks = queueStore.sortedTasks as PersistenceTask<T>[]
-      const tasksToProcess: PersistenceTask<T>[] = []
       const now = Date.now()
 
-      // Prendre jusqu'à maxConcurrent tâches qui sont prêtes à être traitées
-      // Une tâche est prête si :
-      // - Elle n'est pas déjà en cours de traitement
-      // - Elle n'a pas de retryAt OU retryAt est dans le passé
-      for (const task of sortedTasks) {
-        if (
-          tasksToProcess.length < this.maxConcurrent &&
-          !this.processing.has(task.id) &&
-          this.processing.size < this.maxConcurrent
-        ) {
-          // Vérifier si la tâche est prête à être traitée (pas de retryAt ou retryAt dépassé)
-          const isReady = !task.retryAt || task.retryAt <= now
-          
-          if (isReady) {
-            // Si la tâche avait un retryAt, le supprimer car elle est maintenant prête
-            // On met à jour la tâche pour retirer retryAt (même si undefined, la vérification !task.retryAt fonctionne)
-            if (task.retryAt) {
-              queueStore.updateTask(task.id, { retryAt: undefined })
-            }
-            tasksToProcess.push(task)
-          }
+      // Utiliser helper pur pour sélectionner les tâches
+      const readyTasks = QueueHelpers.getReadyTasks(
+        sortedTasks,
+        this.processing,
+        this.maxConcurrent,
+        now
+      )
+
+      // Nettoyer retryAt des tâches prêtes
+      for (const task of readyTasks) {
+        if (task.retryAt) {
+          queueStore.updateTask(task.id, { retryAt: undefined })
         }
       }
 
       // Traiter les tâches en parallèle
-      if (tasksToProcess.length > 0) {
-        console.log('[PersistedQueueManager] Processing', tasksToProcess.length, 'tasks:', 
-          tasksToProcess.map(t => `${t.entityType}:${t.operation}:${t.id.substring(0, 20)}...`))
-        const promises = tasksToProcess.map(task => this.processTask(task))
+      if (readyTasks.length > 0) {
+        const promises = readyTasks.map(task => this.processTask(task))
         await Promise.allSettled(promises)
       }
 
-      // Calculer le prochain retryAt le plus proche pour savoir quand réessayer
-      const nextRetryAt = sortedTasks
-        .filter(task => task.retryAt && task.retryAt > now)
-        .map(task => task.retryAt!)
-        .sort((a, b) => a - b)[0]
-
-      // Si on a des tâches en attente de retry, attendre jusqu'au prochain retry
-      if (nextRetryAt) {
-        const waitTime = nextRetryAt - now
-        if (waitTime > 0) {
-          console.log(`[PersistedQueueManager] Waiting ${Math.round(waitTime / TIMING.MS_PER_SECOND)}s until next retry at ${new Date(nextRetryAt).toISOString()}`)
-          await new Promise(resolve => setTimeout(resolve, Math.min(waitTime, TIMING.POLLING_INTERVAL_MAX_WAIT)))
-        }
-      } else if (queueStore.queueSize === 0 && this.processing.size > 0) {
-        // Si la queue est vide mais qu'on attend encore des tâches, on attend un peu
-        await new Promise(resolve => setTimeout(resolve, TIMING.POLLING_INTERVAL_SHORT))
-      } else if (queueStore.queueSize > 0 && tasksToProcess.length === 0) {
-        // Si on a des tâches mais qu'elles ne sont pas prêtes (retryAt dans le futur), attendre un peu
-        await new Promise(resolve => setTimeout(resolve, TIMING.POLLING_INTERVAL_NORMAL))
-      }
+      // Utiliser helper pur pour calculer le prochain retry
+      const nextRetryAt = QueueHelpers.getNextRetryTime(sortedTasks, now)
+      
+      // Attendre selon la situation
+      await this.waitForNextAction(nextRetryAt, queueStore.queueSize, readyTasks.length)
     }
 
     this.isRunning = false
-    console.log('[PersistedQueueManager] Processing stopped')
   }
 
   /**
-   * Traite une tâche
-   * Offline-first : la tâche reste dans la queue jusqu'à succès (si erreur récupérable)
+   * Attend jusqu'à la prochaine action (simplifié)
+   * @private
+   */
+  private async waitForNextAction(
+    nextRetryAt: number | null,
+    queueSize: number,
+    readyTasksCount: number
+  ): Promise<void> {
+    const now = Date.now()
+    
+    if (nextRetryAt) {
+      const waitTime = Math.min(nextRetryAt - now, TIMING.POLLING_INTERVAL_MAX_WAIT)
+      if (waitTime > 0) {
+        await new Promise(resolve => setTimeout(resolve, waitTime))
+      }
+    } else if (queueSize === 0 && this.processing.size > 0) {
+      await new Promise(resolve => setTimeout(resolve, TIMING.POLLING_INTERVAL_SHORT))
+    } else if (queueSize > 0 && readyTasksCount === 0) {
+      await new Promise(resolve => setTimeout(resolve, TIMING.POLLING_INTERVAL_NORMAL))
+    }
+  }
+
+  /**
+   * Traite une tâche (simplifié avec helpers purs)
    * @private
    */
   private async processTask(task: PersistenceTask<T>): Promise<void> {
-    if (!this.processor) {
-      console.warn('[PersistedQueueManager] processTask called but no processor')
-      return
-    }
-
-    // Utiliser les métadonnées comme source de vérité
-    const metadata = task.payload.metadata
-
-    console.log('[PersistedQueueManager] processTask started:', {
-      taskId: task.id,
-      entityType: task.entityType,
-      operation: task.operation,
-      retryCount: metadata.retryCount
-    })
+    if (!this.processor) return
 
     this.processing.add(task.id)
     const queueStore = this.getQueueStore()
-
-    // Vérifier l'expiration de la tâche avant traitement
-    if (task.expiresAt && Date.now() > task.expiresAt) {
-      console.warn(`[PersistedQueueManager] Task ${task.id} expired, removing from queue`)
-      queueStore.dequeue(task.id)
-      this.processing.delete(task.id)
-      return
-    }
-
-    // Calculer expiresAt si maxAge est défini mais pas expiresAt
-    if (task.maxAge && !task.expiresAt) {
-      task.expiresAt = task.createdAt + task.maxAge
-      queueStore.updateTask(task.id, { expiresAt: task.expiresAt })
-    }
+    const now = Date.now()
 
     try {
-      await this.processor(task)
-      
-      // ✅ Tâche réussie : maintenant on peut la retirer de la queue
-      queueStore.dequeue(task.id)
-      console.log('[PersistedQueueManager] Task completed successfully:', task.id)
-    } catch (error) {
-      // Utiliser les métadonnées comme source de vérité
-      const shouldRetry = this.retryManager.shouldRetry(error, {
-        ...task,
-        retryCount: metadata.retryCount,
-        maxRetries: metadata.maxRetries
-      })
-      
-      if (!shouldRetry) {
-        // Erreur non récupérable ou expiration : supprimer de la queue
-        const analysis = this.retryManager.analyzeError(error)
-        console.error(`[PersistedQueueManager] Task ${task.id} failed permanently:`, {
-          code: analysis.code,
-          message: analysis.message,
-          httpStatus: analysis.httpStatus,
-          retryCount: metadata.retryCount
-        })
-        
+      // Utiliser helper pur pour vérifier expiration
+      if (QueueHelpers.isTaskExpired(task, now)) {
         queueStore.dequeue(task.id)
         return
       }
 
-      // Mettre à jour les métadonnées (source de vérité)
-      const updatedMetadata = updateMetadataOnError(metadata, error)
-      task.payload.metadata = updatedMetadata
+      // Utiliser helper pur pour calculer expiresAt
+      const expiresAt = QueueHelpers.calculateExpiresAt(task)
+      if (expiresAt && expiresAt !== task.expiresAt) {
+        queueStore.updateTask(task.id, { expiresAt })
+      }
+
+      // Appeler le processeur (callback)
+      await this.processor(task)
       
-      // Calculer le délai avec backoff exponentiel
-      const delay = this.retryManager.calculateDelay({
-        ...task,
-        retryCount: updatedMetadata.retryCount,
-        maxRetries: updatedMetadata.maxRetries
-      })
-      const delayInMinutes = Math.round(delay / TIMING.MS_PER_MINUTE * 10) / 10
-      const retryAt = Date.now() + delay
-      
-      console.warn('[PersistedQueueManager] Task failed, will retry:', {
-        taskId: task.id,
-        retryCount: updatedMetadata.retryCount,
-        delayMs: delay,
-        delayMinutes: delayInMinutes,
-        retryAt: new Date(retryAt).toISOString(),
-        error: error instanceof Error ? error.message : String(error)
-      })
-      
-      // Mettre à jour la tâche avec les nouvelles métadonnées
-      queueStore.updateTask(task.id, { 
-        payload: task.payload,
-        retryAt: retryAt
-      })
-      
-      console.log(`[PersistedQueueManager] Task scheduled for retry ${updatedMetadata.retryCount} at ${new Date(retryAt).toISOString()} (in ${delayInMinutes} minutes):`, task.id)
+      queueStore.dequeue(task.id)
+    } catch (error) {
+      await this.handleTaskError(task, error, queueStore, now)
     } finally {
       this.processing.delete(task.id)
-      console.log('[PersistedQueueManager] processTask finished:', task.id)
     }
+  }
+
+  /**
+   * Gère les erreurs de tâche (simplifié)
+   * @private
+   */
+  private async handleTaskError(
+    task: PersistenceTask<T>,
+    error: unknown,
+    queueStore: ReturnType<typeof this.getQueueStore>,
+    now: number
+  ): Promise<void> {
+    const metadata = task.payload.metadata
+    const shouldRetry = this.retryManager.shouldRetry(error, {
+      ...task,
+      retryCount: metadata.retryCount,
+      maxRetries: metadata.maxRetries
+    })
+    
+    if (!shouldRetry) {
+      queueStore.dequeue(task.id)
+      return
+    }
+
+    // Mettre à jour métadonnées
+    const updatedMetadata = updateMetadataOnError(metadata, error)
+    task.payload.metadata = updatedMetadata
+    
+    // Utiliser helper pur pour calculer retryAt
+    const retryAt = QueueHelpers.calculateRetryAt(task, this.retryManager, now)
+    
+    queueStore.updateTask(task.id, { 
+      payload: task.payload,
+      retryAt
+    })
   }
 
   /**

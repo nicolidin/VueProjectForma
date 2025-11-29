@@ -8,12 +8,14 @@ import type {
   PersistenceTask,
   PersistenceStrategy,
   PersistableEntity,
-  PersistenceEvents
+  PersistenceEvents,
+  PersistenceOperation
 } from './types'
 import type { EventBus } from './eventBus'
 import type { PersistedQueueManager } from '../queue/QueueManager'
 import { updateMetadataOnSuccess, updateMetadataOnError, updateMetadataOnSyncing } from './metadata'
 import { createTask } from './taskHelpers'
+import { ENTITY_EVENTS, PERSISTENCE_EVENTS, QUEUE_EVENTS } from './events'
 
 /**
  * Orchestrateur de persistance
@@ -61,80 +63,46 @@ export class PersistenceOrchestrator<T = unknown> {
    * @private
    */
   private setupEventListeners(): void {
-    // Écouter la création d'entités
-    const unsubscribeCreate = this.eventBus.on('entity:created', ({ entityType, data }) => {
-      console.log('[PersistenceOrchestrator] Received entity:created event:', { 
-        entityType, 
-        frontId: (data as any).frontId 
-      })
-      this.enqueueCreate(entityType, data)
+    const unsubscribeCreate = this.eventBus.on(ENTITY_EVENTS.CREATED, ({ entityType, data }) => {
+      this.enqueueOperation('create', entityType, data, (data as any)?.frontId || `temp-${Date.now()}`)
     })
 
-    // Écouter la mise à jour d'entités
-    const unsubscribeUpdate = this.eventBus.on('entity:updated', ({ entityType, id, updates }) => {
-      console.log('[PersistenceOrchestrator] Received entity:updated event:', { entityType, id })
-      this.enqueueUpdate(entityType, id, updates)
+    const unsubscribeUpdate = this.eventBus.on(ENTITY_EVENTS.UPDATED, ({ entityType, id, updates }) => {
+      this.enqueueOperation('update', entityType, updates, id)
     })
 
-    // Écouter la suppression d'entités
-    const unsubscribeDelete = this.eventBus.on('entity:deleted', ({ entityType, id }) => {
-      console.log('[PersistenceOrchestrator] Received entity:deleted event:', { entityType, id })
-      this.enqueueDelete(entityType, id)
+    const unsubscribeDelete = this.eventBus.on(ENTITY_EVENTS.DELETED, ({ entityType, id }) => {
+      this.enqueueOperation('delete', entityType, {} as T, id)
     })
 
     this.unsubscribeFunctions = [unsubscribeCreate, unsubscribeUpdate, unsubscribeDelete]
   }
 
   /**
-   * Met en queue une création
+   * Méthode générique pour enqueuer une opération (fusionne les 3 méthodes)
    * @private
    */
-  private enqueueCreate(entityType: string, data: T): void {
-    const frontId = (data as any).frontId || `temp-${Date.now()}`
-    const task = createTask('create', entityType, data, frontId, this.maxRetries)
-    this.enqueueTask(task)
-  }
-
-  /**
-   * Met en queue une mise à jour
-   * @private
-   */
-  private enqueueUpdate(entityType: string, id: string, updates: Partial<T>): void {
-    const task = createTask('update', entityType, updates, id, this.maxRetries)
-    this.enqueueTask(task)
-  }
-
-  /**
-   * Met en queue une suppression
-   * @private
-   */
-  private enqueueDelete(entityType: string, id: string): void {
-    const task = createTask('delete', entityType, {} as T, id, this.maxRetries)
+  private enqueueOperation(
+    operation: PersistenceOperation,
+    entityType: string,
+    data: T | Partial<T>,
+    id: string
+  ): void {
+    const task = createTask(operation, entityType, data, id, this.maxRetries)
     this.enqueueTask(task)
   }
 
   /**
    * Met une tâche en queue et émet l'événement
-   * Centralise la logique commune d'enqueue
    * @private
    */
   private enqueueTask(task: PersistenceTask<T>): void {
-    console.log('[PersistenceOrchestrator] Enqueuing task:', {
-      taskId: task.id,
-      entityType: task.entityType,
-      operation: task.operation,
-      frontId: task.payload.metadata.frontId,
-      priority: task.priority
-    })
-    
     this.queue.enqueue(task)
-    this.eventBus.emit('queue:task-enqueued', { task })
-    
-    console.log('[PersistenceOrchestrator] Task enqueued, queue size:', this.queue.size())
+    this.eventBus.emit(QUEUE_EVENTS.TASK_ENQUEUED, { task })
   }
 
   /**
-   * Traite une tâche de la queue
+   * Traite une tâche de la queue (extrait en méthodes plus petites)
    * @private
    */
   private async processTask(task: PersistenceTask<T>): Promise<void> {
@@ -143,79 +111,107 @@ export class PersistenceOrchestrator<T = unknown> {
       throw new Error(`No strategy registered for entity type: ${task.entityType}`)
     }
 
-    this.eventBus.emit('queue:task-processing', { task })
+    this.eventBus.emit(QUEUE_EVENTS.TASK_PROCESSING, { task })
 
     try {
-      // Mettre à jour les métadonnées pour indiquer qu'on synchronise
       task.payload.metadata = updateMetadataOnSyncing(task.payload.metadata)
-
-      let persisted: PersistableEntity<T>
-
-      switch (task.operation) {
-        case 'create':
-          persisted = await strategy.persistCreate(task.payload)
-          break
-        case 'update':
-          persisted = await strategy.persistUpdate(task.payload)
-          break
-        case 'delete':
-          await strategy.persistDelete(task.payload.metadata.frontId, task.entityType)
-          persisted = task.payload // Pour delete, on retourne l'entité originale
-          break
-        default:
-          throw new Error(`Unknown operation: ${task.operation}`)
-      }
-
-      // Mettre à jour les métadonnées après succès
-      persisted.metadata = updateMetadataOnSuccess(
-        persisted.metadata,
-        (persisted.data as any)?._id,
-        persisted.metadata.version
-      )
-
-      // Émettre l'événement de succès
-      this.eventBus.emit('entity:persisted', {
-        entityType: task.entityType,
-        original: task.payload,
-        persisted
-      })
-
-      this.eventBus.emit('queue:task-completed', { task })
+      
+      const persisted = await this.executeStrategy(task, strategy)
+      const updatedPersisted = this.updateMetadataOnSuccess(persisted, task)
+      
+      this.emitSuccessEvents(task, updatedPersisted)
     } catch (error) {
-      // Mettre à jour les métadonnées après erreur
-      task.payload.metadata = updateMetadataOnError(task.payload.metadata, error)
-
-      // Émettre l'événement d'erreur approprié
-      const errorEvent = this.getErrorEventName(task.operation)
-      this.eventBus.emit(errorEvent, {
-        entityType: task.entityType,
-        task,
-        error
-      })
-
-      this.eventBus.emit('queue:task-failed', { task, error })
-
-      // Re-throw pour que la queue puisse gérer le retry
-      // La queue utilisera RetryManager pour déterminer si l'erreur est récupérable
-      throw error
+      this.handleError(task, error)
+      throw error // Re-throw pour que la queue puisse gérer le retry
     }
+  }
+
+  /**
+   * Exécute la stratégie selon l'opération (méthode extraite)
+   * @private
+   */
+  private async executeStrategy(
+    task: PersistenceTask<T>,
+    strategy: PersistenceStrategy<T>
+  ): Promise<PersistableEntity<T>> {
+    switch (task.operation) {
+      case 'create':
+        return await strategy.persistCreate(task.payload)
+      case 'update':
+        return await strategy.persistUpdate(task.payload)
+      case 'delete':
+        await strategy.persistDelete(task.payload.metadata.frontId, task.entityType)
+        return task.payload
+      default:
+        throw new Error(`Unknown operation: ${task.operation}`)
+    }
+  }
+
+  /**
+   * Met à jour les métadonnées après succès (méthode extraite)
+   * @private
+   */
+  private updateMetadataOnSuccess(
+    persisted: PersistableEntity<T>,
+    task: PersistenceTask<T>
+  ): PersistableEntity<T> {
+    persisted.metadata = updateMetadataOnSuccess(
+      persisted.metadata,
+      (persisted.data as any)?._id,
+      persisted.metadata.version
+    )
+    return persisted
+  }
+
+  /**
+   * Émet les événements de succès (méthode extraite)
+   * @private
+   */
+  private emitSuccessEvents(
+    task: PersistenceTask<T>,
+    persisted: PersistableEntity<T>
+  ): void {
+    this.eventBus.emit(PERSISTENCE_EVENTS.PERSISTED, {
+      entityType: task.entityType,
+      original: task.payload,
+      persisted
+    })
+    this.eventBus.emit(QUEUE_EVENTS.TASK_COMPLETED, { task })
+  }
+
+  /**
+   * Gère les erreurs (méthode extraite)
+   * @private
+   */
+  private handleError(task: PersistenceTask<T>, error: unknown): void {
+    task.payload.metadata = updateMetadataOnError(task.payload.metadata, error)
+
+    const errorEvent = this.getErrorEventName(task.operation)
+    this.eventBus.emit(errorEvent, {
+      entityType: task.entityType,
+      task,
+      error
+    })
+
+    this.eventBus.emit(QUEUE_EVENTS.TASK_FAILED, { task, error })
+  }
+
+  /**
+   * Mapping des opérations vers les événements d'erreur
+   * @private
+   */
+  private readonly ERROR_EVENT_MAP: Record<PersistenceOperation, keyof PersistenceEvents<T>> = {
+    create: PERSISTENCE_EVENTS.PERSIST_ERROR as keyof PersistenceEvents<T>,
+    update: PERSISTENCE_EVENTS.UPDATE_ERROR as keyof PersistenceEvents<T>,
+    delete: PERSISTENCE_EVENTS.DELETE_ERROR as keyof PersistenceEvents<T>,
   }
 
   /**
    * Retourne le nom de l'événement d'erreur selon l'opération
    * @private
    */
-  private getErrorEventName(operation: PersistenceTask<T>['operation']): keyof PersistenceEvents<T> {
-    switch (operation) {
-      case 'create':
-        return 'entity:persist-error'
-      case 'update':
-        return 'entity:update-error'
-      case 'delete':
-        return 'entity:delete-error'
-      default:
-        return 'entity:persist-error'
-    }
+  private getErrorEventName(operation: PersistenceOperation): keyof PersistenceEvents<T> {
+    return this.ERROR_EVENT_MAP[operation]
   }
 
   /**
