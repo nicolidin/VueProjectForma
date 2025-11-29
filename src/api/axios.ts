@@ -41,13 +41,18 @@ axiosClient.interceptors.request.use(
 // ─── Intercepteur de réponse : Gère les erreurs d'authentification ───────────────
 // Un intercepteur de réponse s'exécute après chaque réponse HTTP
 // - Permet de gérer les erreurs globalement (ex: token expiré)
+// - ⚠️ Important : Ne déconnecte que sur les vrais 401 (token invalide)
+// - Les erreurs réseau (backend down) ne déclenchent pas de déconnexion
 axiosClient.interceptors.response.use(
   (response) => {
     // Si la réponse est OK, la retourner telle quelle
     return response;
   },
   (error) => {
-    // Si le serveur retourne 401 (Unauthorized), le token est invalide ou expiré
+    // Seulement déconnecter si c'est vraiment un 401 (token invalide/expiré)
+    // - error.response existe : le serveur a répondu
+    // - error.response.status === 401 : authentification échouée
+    // - Pas de déconnexion pour les erreurs réseau (pas de response)
     if (error.response?.status === 401) {
       const authStore = useAuthStore();
       // Déconnecter l'utilisateur et rediriger vers la page de login
@@ -55,6 +60,8 @@ axiosClient.interceptors.response.use(
       // Optionnel : rediriger vers /login
       // window.location.href = '/login';
     }
+    // Les erreurs réseau (pas de response) ne déclenchent pas de déconnexion
+    // L'utilisateur reste connecté même si le backend est temporairement inaccessible
     
     return Promise.reject(error);
   }

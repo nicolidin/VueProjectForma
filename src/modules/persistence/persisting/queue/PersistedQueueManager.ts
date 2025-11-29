@@ -195,18 +195,29 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
       // Récupérer les tâches depuis le store (triées par priorité)
       const sortedTasks = queueStore.sortedTasks as PersistenceTask<T>[]
       const tasksToProcess: PersistenceTask<T>[] = []
+      const now = Date.now()
 
-      // Prendre jusqu'à maxConcurrent tâches
-      // Ne pas retirer de la queue maintenant : on le fera seulement après succès
+      // Prendre jusqu'à maxConcurrent tâches qui sont prêtes à être traitées
+      // Une tâche est prête si :
+      // - Elle n'est pas déjà en cours de traitement
+      // - Elle n'a pas de retryAt OU retryAt est dans le passé
       for (const task of sortedTasks) {
         if (
           tasksToProcess.length < this.options.maxConcurrent &&
           !this.processing.has(task.id) &&
           this.processing.size < this.options.maxConcurrent
         ) {
-          // Ne pas retirer de la queue : la tâche reste dans pendingTasks
-          // Elle sera retirée seulement après succès dans processTask
-          tasksToProcess.push(task)
+          // Vérifier si la tâche est prête à être traitée (pas de retryAt ou retryAt dépassé)
+          const isReady = !task.retryAt || task.retryAt <= now
+          
+          if (isReady) {
+            // Si la tâche avait un retryAt, le supprimer car elle est maintenant prête
+            // On met à jour la tâche pour retirer retryAt (même si undefined, la vérification !task.retryAt fonctionne)
+            if (task.retryAt) {
+              queueStore.updateTask(task.id, { retryAt: undefined })
+            }
+            tasksToProcess.push(task)
+          }
         }
       }
 
@@ -218,9 +229,25 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
         await Promise.allSettled(promises)
       }
 
-      // Si la queue est vide mais qu'on attend encore des tâches, on attend un peu
-      if (queueStore.queueSize === 0 && this.processing.size > 0) {
+      // Calculer le prochain retryAt le plus proche pour savoir quand réessayer
+      const nextRetryAt = sortedTasks
+        .filter(task => task.retryAt && task.retryAt > now)
+        .map(task => task.retryAt!)
+        .sort((a, b) => a - b)[0]
+
+      // Si on a des tâches en attente de retry, attendre jusqu'au prochain retry
+      if (nextRetryAt) {
+        const waitTime = nextRetryAt - now
+        if (waitTime > 0) {
+          console.log(`[PersistedQueueManager] Waiting ${Math.round(waitTime / 1000)}s until next retry at ${new Date(nextRetryAt).toISOString()}`)
+          await new Promise(resolve => setTimeout(resolve, Math.min(waitTime, 5000))) // Max 5s pour éviter de bloquer trop longtemps
+        }
+      } else if (queueStore.queueSize === 0 && this.processing.size > 0) {
+        // Si la queue est vide mais qu'on attend encore des tâches, on attend un peu
         await new Promise(resolve => setTimeout(resolve, 100))
+      } else if (queueStore.queueSize > 0 && tasksToProcess.length === 0) {
+        // Si on a des tâches mais qu'elles ne sont pas prêtes (retryAt dans le futur), attendre un peu
+        await new Promise(resolve => setTimeout(resolve, 1000)) // Vérifier toutes les secondes
       }
     }
 
@@ -289,34 +316,33 @@ export class PersistedQueueManager<T = unknown> implements IQueueManager<T> {
         return
       }
 
-      // ❌ Erreur récupérable : retry avec backoff exponentiel
+      // ❌ Erreur récupérable : planifier le retry avec backoff exponentiel
       task.retryCount++
       
-      // Calculer le délai avec backoff exponentiel (en minutes)
+      // Calculer le délai avec backoff exponentiel
       const delay = this.retryManager.calculateDelay(task)
       const delayInMinutes = Math.round(delay / 60000 * 10) / 10 // Arrondir à 1 décimale
+      
+      // Calculer le timestamp de retry (maintenant + délai)
+      const retryAt = Date.now() + delay
       
       console.warn('[PersistedQueueManager] Task failed, will retry:', {
         taskId: task.id,
         retryCount: task.retryCount,
         delayMs: delay,
         delayMinutes: delayInMinutes,
+        retryAt: new Date(retryAt).toISOString(),
         error: error instanceof Error ? error.message : String(error)
       })
       
-      // Attendre avant de retenter
-      await new Promise(resolve => setTimeout(resolve, delay))
+      // Mettre à jour la tâche dans le store avec retryCount et retryAt
+      // La tâche reste dans la queue mais ne sera pas traitée avant retryAt
+      queueStore.updateTask(task.id, { 
+        retryCount: task.retryCount,
+        retryAt: retryAt
+      })
       
-      // Remettre en queue (persistée) avec le retryCount mis à jour
-      // La tâche est déjà dans la queue, mais on la met à jour pour persister le retryCount
-      queueStore.updateTask(task.id, { retryCount: task.retryCount })
-      
-      // Si la tâche n'est plus dans la queue (cas edge), la remettre
-      if (!queueStore.getTaskById(task.id)) {
-        queueStore.enqueue(task)
-      }
-      
-      console.log(`[PersistedQueueManager] Task scheduled for retry ${task.retryCount} after ${delayInMinutes} minutes:`, task.id)
+      console.log(`[PersistedQueueManager] Task scheduled for retry ${task.retryCount} at ${new Date(retryAt).toISOString()} (in ${delayInMinutes} minutes):`, task.id)
     } finally {
       this.processing.delete(task.id)
       console.log('[PersistedQueueManager] processTask finished:', task.id)

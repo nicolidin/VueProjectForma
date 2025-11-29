@@ -72,6 +72,12 @@ export interface PersistenceTask<T = unknown> {
    * Si défini, expiresAt sera calculé automatiquement à createdAt + maxAge
    */
   maxAge?: number
+  /**
+   * Timestamp de retry planifié (optionnel)
+   * Si défini, la tâche ne sera traitée qu'après ce timestamp
+   * Utilisé pour implémenter le backoff exponentiel de manière non-bloquante
+   */
+  retryAt?: number
 }
 
 /**

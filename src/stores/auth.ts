@@ -92,6 +92,7 @@ export const useAuthStore = defineStore('auth', () => {
   // - Appelée au démarrage de l'application
   // - Récupère le token depuis localStorage et vérifie s'il est valide
   // - Si valide, récupère les infos utilisateur depuis l'API
+  // - Distingue les erreurs réseau (backend down) des erreurs d'authentification
   async function initAuth() {
     const storedToken = localStorage.getItem('auth_token');
     if (storedToken) {
@@ -101,10 +102,29 @@ export const useAuthStore = defineStore('auth', () => {
         // Vérifier si le token est toujours valide en appelant /api/auth/me
         const userData = await getCurrentUser();
         user.value = userData;
-      } catch (err) {
-        // Si le token est invalide ou expiré, nettoyer
-        console.error('Token invalide, déconnexion...', err);
-        logout();
+      } catch (err: any) {
+        // ⚠️ Distinguer erreur réseau vs erreur auth
+        const isNetworkError = 
+          !err.response || // Pas de réponse = erreur réseau
+          err.code === 'ECONNREFUSED' || // Connexion refusée
+          err.code === 'ERR_NETWORK' || // Erreur réseau générale
+          err.code === 'ETIMEDOUT' || // Timeout
+          err.code === 'ENOTFOUND'; // DNS non trouvé
+        
+        if (isNetworkError) {
+          // Erreur réseau : backend inaccessible, garder le token
+          // L'utilisateur reste connecté et pourra utiliser l'app (avec données en cache)
+          console.warn('Backend inaccessible, mais token conservé. L\'utilisateur reste connecté.', err);
+          // Ne pas déconnecter, juste ne pas mettre à jour user
+        } else if (err.response?.status === 401) {
+          // Token invalide/expiré : déconnecter
+          console.error('Token invalide ou expiré, déconnexion...', err);
+          logout();
+        } else {
+          // Autre erreur (500, 404, etc.) : garder le token
+          // Ce n'est pas une erreur d'authentification
+          console.error('Erreur lors de la vérification du token:', err);
+        }
       } finally {
         isLoading.value = false;
       }

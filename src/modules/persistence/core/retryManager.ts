@@ -19,34 +19,23 @@ export interface RetryConfig {
   maxRetries: number
   
   /**
-   * Nombre de retries rapides avant le backoff exponentiel (défaut: 0)
-   * Si 0, on commence directement avec le backoff exponentiel
-   */
-  maxFastRetries: number
-  
-  /**
-   * Délai initial pour les retries rapides en ms (défaut: 2000 = 2 secondes)
-   * Non utilisé si maxFastRetries = 0
+   * Délai initial du premier retry en ms (défaut: 30000 = 30 secondes)
+   * C'est le délai avant le premier retry avec backoff exponentiel
    */
   initialDelay: number
   
   /**
-   * Délai initial pour le backoff exponentiel en ms (défaut: 240000 = 4 minutes)
-   * C'est le délai avant le premier retry avec backoff exponentiel
-   */
-  exponentialBackoffInitialDelay: number
-  
-  /**
    * Multiplicateur pour le backoff exponentiel (défaut: 4)
-   * Ex: 4min → 16min → 64min → 256min...
+   * Le délai augmente exponentiellement : initialDelay × multiplier^(retryCount-1)
+   * Ex: 30s → 120s (2min) → 480s (8min) → 1920s (32min)...
    */
-  backoffMultiplier: number
+  multiplier: number
   
   /**
-   * Délai maximum en ms (défaut: 6000000 = 100 minutes)
+   * Délai maximum en ms (défaut: 600000 = 10 minutes)
    * Limite le délai maximum entre deux tentatives
    */
-  maxDelay: number
+  maxDelay?: number
 }
 
 /**
@@ -54,11 +43,9 @@ export interface RetryConfig {
  */
 export const DEFAULT_RETRY_CONFIG: RetryConfig = {
   maxRetries: 3, // 3 tentatives maximum
-  maxFastRetries: 0, // Pas de retries rapides, on commence directement avec le backoff exponentiel
-  initialDelay: 2000, // 2 secondes (non utilisé car maxFastRetries = 0)
-  exponentialBackoffInitialDelay: 240000, // 4 minutes pour le premier backoff
-  backoffMultiplier: 4, // Multiplicateur de 4 : 4min → 16min → 64min → 100min (max)
-  maxDelay: 6000000 // 100 minutes maximum
+  initialDelay: 30000, // 30 secondes pour le premier retry
+  multiplier: 4, // Multiplicateur de 4 : 30s → 120s (2min) → 480s (8min) → 1920s (32min)
+  maxDelay: 600000 // 10 minutes maximum
 }
 
 /**
@@ -74,97 +61,58 @@ export interface ErrorAnalysis {
 
 /**
  * Analyse une erreur pour déterminer si elle est récupérable
+ * 
+ * Philosophie : Par défaut, TOUT est retryable (fail-safe)
+ * Les limites sont gérées par maxRetries et expiresAt dans la configuration
  */
 export function analyzeError(error: unknown): ErrorAnalysis {
-  // Erreurs réseau (TypeError avec fetch, NetworkError, etc.)
-  if (error instanceof TypeError) {
-    const message = error.message.toLowerCase()
-    if (message.includes('fetch') || message.includes('network') || message.includes('failed to fetch')) {
-      return {
-        isRetryable: true,
-        error,
-        code: 'NETWORK_ERROR',
-        message: error.message
-      }
-    }
-  }
-
-  // Erreurs Axios (si utilisé)
+  // ✅ TOUT est retryable par défaut
+  // Les limites sont gérées par maxRetries et expiresAt
+  
+  // On catégorise les erreurs pour le logging et le debugging
+  let code = 'UNKNOWN_ERROR'
+  let httpStatus: number | undefined
+  
   if (error && typeof error === 'object') {
     // Erreur Axios avec response
     if ('response' in error) {
       const axiosError = error as any
-      const status = axiosError.response?.status
+      httpStatus = axiosError.response?.status
       
-      // Erreurs serveur (5xx) : retryable
-      if (status >= 500 && status < 600) {
-        return {
-          isRetryable: true,
-          error,
-          httpStatus: status,
-          code: 'SERVER_ERROR',
-          message: axiosError.response?.data?.message || `HTTP ${status}`
-        }
-      }
-      
-      // Erreurs client (4xx) : généralement non retryable
-      if (status >= 400 && status < 500) {
-        // Mais certaines erreurs 4xx peuvent être retryables
-        // 408 Request Timeout : retryable
-        // 429 Too Many Requests : retryable (avec backoff)
-        if (status === 408 || status === 429) {
-          return {
-            isRetryable: true,
-            error,
-            httpStatus: status,
-            code: status === 408 ? 'TIMEOUT' : 'RATE_LIMIT',
-            message: axiosError.response?.data?.message || `HTTP ${status}`
-          }
-        }
-        
-        // Autres 4xx : non retryable
-        return {
-          isRetryable: false,
-          error,
-          httpStatus: status,
-          code: 'CLIENT_ERROR',
-          message: axiosError.response?.data?.message || `HTTP ${status}`
+      if (httpStatus) {
+        if (httpStatus >= 500) {
+          code = 'SERVER_ERROR'
+        } else if (httpStatus >= 400) {
+          code = 'CLIENT_ERROR'
         }
       }
     }
     
-    // Erreur avec code (timeout, etc.)
+    // Erreur avec code
     if ('code' in error) {
-      const code = (error as any).code
-      if (code === 'ECONNABORTED' || code === 'ETIMEDOUT' || code === 'TIMEOUT') {
-        return {
-          isRetryable: true,
-          error,
-          code: 'TIMEOUT',
-          message: (error as any).message || 'Request timeout'
-        }
-      }
-    }
-    
-    // Erreur avec message de timeout
-    if ('message' in error) {
-      const message = String((error as any).message).toLowerCase()
-      if (message.includes('timeout') || message.includes('aborted')) {
-        return {
-          isRetryable: true,
-          error,
-          code: 'TIMEOUT',
-          message: (error as any).message
-        }
+      const errorCode = (error as any).code
+      if (errorCode === 'ERR_NETWORK' || errorCode === 'ERR_CONNECTION_REFUSED' || errorCode === 'ERR_CONNECTION_ABORTED') {
+        code = 'NETWORK_ERROR'
+      } else if (errorCode === 'ECONNABORTED' || errorCode === 'ETIMEDOUT' || errorCode === 'TIMEOUT') {
+        code = 'TIMEOUT'
       }
     }
   }
+  
+  // Erreurs réseau (TypeError avec fetch)
+  if (error instanceof TypeError) {
+    const message = error.message.toLowerCase()
+    if (message.includes('fetch') || message.includes('network') || message.includes('failed to fetch')) {
+      code = 'NETWORK_ERROR'
+    }
+  }
 
-  // Par défaut : non retryable (erreur inconnue)
+  // ✅ TOUT est retryable
   return {
-    isRetryable: false,
+    isRetryable: true,
     error,
-    code: 'UNKNOWN_ERROR',
+    code,
+    httpStatus,
     message: error instanceof Error ? error.message : String(error)
   }
 }
@@ -172,14 +120,17 @@ export function analyzeError(error: unknown): ErrorAnalysis {
 /**
  * Calcule le délai de retry avec backoff exponentiel
  * 
- * - Si maxFastRetries > 0 : pour les N premières tentatives, délai fixe (initialDelay)
- * - Sinon ou après maxFastRetries : backoff exponentiel (exponentialBackoffInitialDelay * multiplier^attempts)
- * - Limité à maxDelay
+ * Formule : delay = initialDelay × multiplier^(retryCount-1)
+ * - retryCount = 1 => delay = initialDelay × multiplier^0 = initialDelay
+ * - retryCount = 2 => delay = initialDelay × multiplier^1
+ * - retryCount = 3 => delay = initialDelay × multiplier^2
  * 
- * Exemple avec maxFastRetries=0, exponentialBackoffInitialDelay=240000 (4min), multiplier=4:
- * - retryCount = 1 => delay = 240000 * 4^0 = 240000 (4min)
- * - retryCount = 2 => delay = 240000 * 4^1 = 960000 (16min)
- * - retryCount = 3 => delay = 240000 * 4^2 = 3840000 (64min) mais limité à maxDelay
+ * Exemple avec initialDelay=30000 (30s), multiplier=4:
+ * - retryCount = 1 => delay = 30000 × 4^0 = 30000 (30s)
+ * - retryCount = 2 => delay = 30000 × 4^1 = 120000 (2min)
+ * - retryCount = 3 => delay = 30000 × 4^2 = 480000 (8min)
+ * 
+ * Le délai est limité à maxDelay si défini
  */
 export function calculateRetryDelay(
   retryCount: number,
@@ -189,23 +140,15 @@ export function calculateRetryDelay(
     return 0
   }
 
-  // Retries rapides : délai fixe (si maxFastRetries > 0)
-  if (config.maxFastRetries > 0 && retryCount <= config.maxFastRetries) {
-    return config.initialDelay
+  // Backoff exponentiel : delay = initialDelay × multiplier^(retryCount-1)
+  const delay = config.initialDelay * Math.pow(config.multiplier, retryCount - 1)
+
+  // Limiter au maxDelay si défini
+  if (config.maxDelay !== undefined) {
+    return Math.min(delay, config.maxDelay)
   }
 
-  // Backoff exponentiel
-  // Si maxFastRetries = 0, on commence directement avec le backoff
-  // retryCount = 1 => exponentialAttempts = 1 => delay = exponentialBackoffInitialDelay * multiplier^0 = exponentialBackoffInitialDelay
-  // retryCount = 2 => exponentialAttempts = 2 => delay = exponentialBackoffInitialDelay * multiplier^1
-  // retryCount = 3 => exponentialAttempts = 3 => delay = exponentialBackoffInitialDelay * multiplier^2
-  const exponentialAttempts = config.maxFastRetries > 0 
-    ? retryCount - config.maxFastRetries 
-    : retryCount
-  const delay = config.exponentialBackoffInitialDelay * Math.pow(config.backoffMultiplier, exponentialAttempts - 1)
-
-  // Limiter au maxDelay
-  return Math.min(delay, config.maxDelay)
+  return delay
 }
 
 /**

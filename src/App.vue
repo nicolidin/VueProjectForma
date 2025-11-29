@@ -21,10 +21,9 @@ usePersistence({
   options: {
     retryConfig: {
       maxRetries: 3, // 3 tentatives par défaut
-      maxFastRetries: 0, // Pas de retries rapides
-      exponentialBackoffInitialDelay: 240000, // 4 minutes
-      backoffMultiplier: 4, // Multiplicateur de 4
-      maxDelay: 6000000 // 100 minutes maximum
+      initialDelay: 180000, // 3 minutes pour le premier retry
+      multiplier: 4, // Multiplicateur de 4 : 3min → 12min → 48min
+      maxDelay: 3600000 // 1 heure maximum
     },
   }
 });

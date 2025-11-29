@@ -38,11 +38,12 @@ persistence/                  # Configurations spécifiques au projet
 - Les services de persistance écoutent ces événements
 - Supporte les handlers synchrones et asynchrones
 
-### 2. **QueueManager** (`core/queue.ts`)
+### 2. **QueueManager** (`core/queue.ts` / `persisting/queue/PersistedQueueManager.ts`)
 - Gère les tâches de persistance de manière séquentielle (ou avec parallélisme limité)
 - Tri par priorité (plus haute priorité en premier)
-- Retry automatique avec délai configurable
+- Retry automatique avec backoff exponentiel **non-bloquant** (utilise `retryAt`)
 - Gestion des erreurs et échecs définitifs
+- Queue persistée dans localStorage via Pinia (support offline)
 
 ### 3. **PersistenceOrchestrator** (`core/orchestrator.ts`)
 - Écoute les événements du store via EventBus
@@ -68,6 +69,11 @@ Chaque entité a des métadonnées de persistance :
 - `maxRetries`: Nombre maximum de tentatives
 - `error`: Dernière erreur rencontrée
 
+Chaque tâche de persistance (`PersistenceTask`) a également :
+- `retryAt`: Timestamp de retry planifié (pour backoff exponentiel non-bloquant)
+- `expiresAt`: Timestamp d'expiration de la tâche (optionnel)
+- `maxAge`: Âge maximum de la tâche en ms (optionnel)
+
 ### 6. **Composable Vue** (`usePersistence.ts`)
 - Initialise le système de persistance (EventBus, QueueManager, Orchestrator)
 - Accepte les stratégies en paramètre (injection de dépendances)
@@ -86,10 +92,80 @@ import { useNotesStore } from '@/stores/notes'
 // Dans App.vue
 // Initialise EventBus, QueueManager et Orchestrator avec les stratégies spécifiques au projet
 usePersistence({
-  note: new NoteRestApiStrategy(),
-  tag: new TagRestApiStrategy()
+  strategies: {
+    note: new NoteRestApiStrategy(),
+    tag: new TagRestApiStrategy()
+  },
+  options: {
+    retryConfig: {
+      maxRetries: 3,        // 3 tentatives maximum
+      initialDelay: 180000, // 3 minutes pour le premier retry
+      multiplier: 4,        // Multiplicateur exponentiel : 3min → 12min → 48min
+      maxDelay: 3600000     // 1 heure maximum (optionnel)
+    }
+  }
 })
 notesStore.initPersistenceListeners() // Le store écoute les événements de persistance
+```
+
+### Configuration du Retry
+
+Le système de persistance utilise un **backoff exponentiel non-bloquant** pour les retries automatiques. **Par défaut, toutes les erreurs sont retryables** (philosophie fail-safe). Les limites sont gérées par `maxRetries` et `expiresAt`.
+
+#### Philosophie : Fail-Safe par Défaut
+
+- **Toutes les erreurs sont retryables par défaut** (réseau, timeout, serveur, client, inconnues)
+- Les limites sont gérées par la configuration (`maxRetries`, `expiresAt`)
+- Approche offline-first : on retry plutôt que d'abandonner
+
+#### Paramètres de configuration
+
+- **`maxRetries`** : Nombre de tentatives maximum (défaut: 3)
+- **`initialDelay`** : Délai initial du premier retry en millisecondes (défaut: 180000 = 3 minutes)
+- **`multiplier`** : Multiplicateur pour le backoff exponentiel (défaut: 4)
+- **`maxDelay`** : Délai maximum en millisecondes, optionnel (défaut: 3600000 = 1 heure)
+
+#### Formule de calcul
+
+Le délai entre chaque retry est calculé avec la formule : `delay = initialDelay × multiplier^(retryCount-1)`
+
+**Exemple avec la configuration par défaut** (initialDelay=3min, multiplier=4) :
+- **1er retry** (retryCount=1) : 3min × 4⁰ = **3 minutes**
+- **2ème retry** (retryCount=2) : 3min × 4¹ = **12 minutes**
+- **3ème retry** (retryCount=3) : 3min × 4² = **48 minutes** (limité à 1h par maxDelay)
+
+Si `maxDelay` est défini, le délai est limité à cette valeur.
+
+#### Implémentation Non-Bloquante
+
+Le système utilise un champ `retryAt` sur chaque tâche pour planifier les retries sans bloquer la queue :
+- La tâche reste dans la queue avec un `retryAt` calculé
+- La boucle de traitement vérifie périodiquement si `retryAt <= now`
+- D'autres tâches peuvent être traitées pendant l'attente
+- Pas de récursion, pas de blocage
+
+#### Configuration par type d'entité
+
+Il est possible de configurer des paramètres de retry différents pour chaque type d'entité :
+
+```typescript
+usePersistence({
+  strategies: {
+    note: new NoteRestApiStrategy(),
+    tag: new TagRestApiStrategy()
+  },
+  options: {
+    retryConfig: {
+      maxRetries: 3,
+      initialDelay: 180000,
+      multiplier: 4
+    },
+    retryConfigByEntityType: {
+      note: { maxRetries: 5, initialDelay: 300000 },  // 5 tentatives, 5 minutes pour le premier retry
+      tag: { maxRetries: 2 }  // Seulement 2 tentatives pour les tags
+    }
+  }
+})
 ```
 <｜tool▁calls▁begin｜><｜tool▁call▁begin｜>
 read_file
@@ -185,10 +261,11 @@ function addTag(tag: TagType) {
    - Stratégies interchangeables
 
 3. **Robuste** :
-   - Retry automatique
-   - Gestion des erreurs
+   - Retry automatique avec backoff exponentiel non-bloquant
+   - Philosophie fail-safe : toutes les erreurs sont retryables par défaut
+   - Gestion des erreurs avec catégorisation (réseau, serveur, client)
    - Métadonnées de persistance pour tracking
-   - Support offline (queue persistée, futur)
+   - Support offline (queue persistée dans localStorage)
 
 4. **Extensible** :
    - Facile d'ajouter de nouvelles stratégies (CRDT, décentralisé)
@@ -229,6 +306,12 @@ eventBus.emit('entity:created', { entityType: 'myEntity', data: myEntity })
 
 - **CRDT Strategy** : Pour synchronisation multi-device avec résolution automatique de conflits
 - **Decentralized Strategy** : Pour persistance P2P
-- **Queue Persistée** : Pour support offline complet
 - **Synchronisation Incrémentale** : Basée sur `lastSyncAt`
 - **Optimistic Locking** : Basé sur `version` dans les métadonnées
+
+## Fonctionnalités Actuelles
+
+✅ **Queue Persistée** : La queue est automatiquement persistée dans localStorage via Pinia  
+✅ **Retry Automatique** : Backoff exponentiel non-bloquant avec `retryAt`  
+✅ **Fail-Safe** : Toutes les erreurs sont retryables par défaut  
+✅ **Support Offline** : Les tâches restent en queue et sont retraitées automatiquement

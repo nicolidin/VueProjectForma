@@ -38,10 +38,10 @@ export interface PersistenceOptions {
    * Configuration du retry globale (timing, backoff exponentiel, nombre de tentatives)
    * Si non défini, utilise la configuration par défaut :
    * - maxRetries: 3
-   * - exponentialBackoffInitialDelay: 240000 (4 minutes)
-   * - backoffMultiplier: 4
-   * - maxDelay: 6000000 (100 minutes)
-   * Séquence : 4min → 16min → 64min → 100min (max)
+   * - initialDelay: 30000 (30 secondes)
+   * - multiplier: 4
+   * - maxDelay: 600000 (10 minutes)
+   * Séquence : 30s → 120s (2min) → 480s (8min) → 1920s (32min, limité à 10min)
    */
   retryConfig?: Partial<RetryConfig>
   /**
