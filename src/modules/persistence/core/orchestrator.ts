@@ -36,8 +36,7 @@ export class PersistenceOrchestrator<T = unknown> {
     this.maxRetries = maxRetries
 
     this.setupEventListeners()
-    // Ne pas appeler setupQueueProcessor() ici pour éviter la race condition
-    // Il sera appelé explicitement via initializeProcessor() après l'enregistrement des stratégies
+    // Le processeur sera initialisé via initializeProcessor() après l'enregistrement des stratégies
   }
 
   /**
@@ -52,7 +51,9 @@ export class PersistenceOrchestrator<T = unknown> {
    * Doit être appelé après l'enregistrement des stratégies pour éviter les race conditions
    */
   initializeProcessor(): void {
-    this.setupQueueProcessor()
+    this.queue.setProcessor(async (task: PersistenceTask<T>) => {
+      await this.processTask(task)
+    })
   }
 
   /**
@@ -82,16 +83,6 @@ export class PersistenceOrchestrator<T = unknown> {
     })
 
     this.unsubscribeFunctions = [unsubscribeCreate, unsubscribeUpdate, unsubscribeDelete]
-  }
-
-  /**
-   * Configure le processeur de la queue
-   * @private
-   */
-  private setupQueueProcessor(): void {
-    this.queue.setProcessor(async (task: PersistenceTask<T>) => {
-      await this.processTask(task)
-    })
   }
 
   /**

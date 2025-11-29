@@ -354,8 +354,7 @@ export class PersistedQueueManager<T = unknown> {
    * Force le redémarrage du traitement (utile après restauration)
    */
   restart(): void {
-    const queueStore = this.getQueueStore()
-    if (!this.isRunning && this.processor && queueStore.queueSize > 0) {
+    if (!this.isRunning && this.processor) {
       this.startProcessing()
     }
   }
