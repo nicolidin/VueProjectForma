@@ -5,6 +5,7 @@ import type {NoteType} from "@/types/NoteType.ts";
 import type {TagType} from "@/types/TagType.ts";
 import {generateRandomUuid} from "vue-lib-exo-corrected";
 import { getPersistenceEventBus } from "@/modules/persistence/usePersistence.ts";
+import type { SyncAdapter } from "@/modules/persistence/sync/syncAdapters";
 
 export const useNotesStore = defineStore('notes',
   () => {
@@ -43,7 +44,7 @@ export const useNotesStore = defineStore('notes',
       if (selectedTagIds.value === null) {
         return notes.value
       }
-      
+
       // Filtrer les notes qui ont au moins un des tags sélectionnés
       return notes.value.filter((note: NoteType) => {
         return note.tagsFrontId.some(tagFrontId => selectedTagIds.value!.has(tagFrontId))
@@ -55,9 +56,9 @@ export const useNotesStore = defineStore('notes',
     }
 
     function addNote(note: NoteType) {
-      console.log('[NotesStore] addNote called:', { 
-        frontId: note.frontId, 
-        contentMd: note.contentMd?.substring(0, 50) + '...' 
+      console.log('[NotesStore] addNote called:', {
+        frontId: note.frontId,
+        contentMd: note.contentMd?.substring(0, 50) + '...'
       })
       notes.value.push(note)
       // Émettre un événement pour déclencher la persistance
@@ -161,53 +162,53 @@ export const useNotesStore = defineStore('notes',
     }
 
     /**
-     * Initialise les listeners pour les événements de persistance
-     * Doit être appelé une fois depuis App.vue après l'initialisation de usePersistence
+     * Adapter de synchronisation pour les notes
+     * Exposé pour être enregistré dans usePersistence
      */
-    function initPersistenceListeners() {
-      // Écouter les événements de persistance réussie
-      eventBus.on('entity:persisted', ({ entityType, original, persisted }) => {
-        if (entityType === 'note') {
-          const note = persisted.data as NoteType
-          const originalNote = original.data as NoteType
-          
-          // Si la note a été créée et qu'on a maintenant un _id du backend
-          if (originalNote.frontId && note._id && !originalNote._id) {
-            syncNote(originalNote.frontId, {
-              _id: note._id,
-              // Mettre à jour aussi les tagsFrontId si le backend les a transformés
-              tagsFrontId: note.tagsFrontId || originalNote.tagsFrontId
-            })
-          } else if (note._id) {
-            // Mise à jour d'une note existante
-            syncNote(note.frontId, {
-              _id: note._id,
-              tagsFrontId: note.tagsFrontId
-            })
-          }
-        } else if (entityType === 'tag') {
-          const tag = persisted.data as TagType
-          const originalTag = original.data as TagType
-          
-          // Si le tag a été créé et qu'on a maintenant un _id du backend
-          if (originalTag.frontId && tag._id && !originalTag._id) {
-            syncTag(originalTag.frontId, {
-              _id: tag._id
-            })
-          } else if (tag._id) {
-            // Mise à jour d'un tag existant
-            syncTag(tag.frontId, {
-              _id: tag._id
-            })
-          }
+    const noteSyncAdapter: SyncAdapter<NoteType> = {
+      entityType: 'note',
+      syncEntity: (original, persisted) => {
+        // Si la note a été créée et qu'on a maintenant un _id du backend
+        if (original.frontId && persisted._id && !original._id) {
+          syncNote(original.frontId, {
+            _id: persisted._id,
+          })
+        } else if (persisted._id) {
+          // Mise à jour d'une note existante
+          syncNote(persisted.frontId, {
+            _id: persisted._id,
+          })
         }
-      })
-
-      // Écouter les erreurs de persistance (optionnel : pour afficher des notifications)
-      eventBus.on('entity:persist-error', ({ entityType, task, error }) => {
-        console.warn(`Erreur de persistance pour ${entityType}:`, task.payload.metadata.frontId, error)
+      },
+      onError: (error, entity) => {
+        console.warn(`Erreur de persistance pour note:`, entity.frontId, error)
         // Ici, on pourrait ajouter une notification à l'utilisateur
-      })
+      }
+    }
+
+    /**
+     * Adapter de synchronisation pour les tags
+     * Exposé pour être enregistré dans usePersistence
+     */
+    const tagSyncAdapter: SyncAdapter<TagType> = {
+      entityType: 'tag',
+      syncEntity: (original, persisted) => {
+        // Si le tag a été créé et qu'on a maintenant un _id du backend
+        if (original.frontId && persisted._id && !original._id) {
+          syncTag(original.frontId, {
+            _id: persisted._id
+          })
+        } else if (persisted._id) {
+          // Mise à jour d'un tag existant
+          syncTag(persisted.frontId, {
+            _id: persisted._id
+          })
+        }
+      },
+      onError: (error, entity) => {
+        console.warn(`Erreur de persistance pour tag:`, entity.frontId, error)
+        // Ici, on pourrait ajouter une notification à l'utilisateur
+      }
     }
 
     return {
@@ -230,7 +231,9 @@ export const useNotesStore = defineStore('notes',
       deleteTag,
       setTagSelected,
       clearSelectedTags,
-      initPersistenceListeners
+      // Exposer les adapters de synchronisation pour usePersistence
+      noteSyncAdapter,
+      tagSyncAdapter
     }
   },{
     persist: {

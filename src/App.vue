@@ -13,6 +13,7 @@ const authStore = useAuthStore();
 // Ce module écoute les événements du store et persiste automatiquement via l'API
 // Il est initialisé une seule fois au niveau de l'application
 // Les stratégies REST sont spécifiques au projet et sont passées en paramètre
+// Les sync adapters permettent de synchroniser les stores après persistance
 usePersistence({
   strategies: {
     note: new NoteRestApiStrategy(),
@@ -25,12 +26,14 @@ usePersistence({
       multiplier: 4, // Multiplicateur de 4 : 3min → 12min → 48min
       maxDelay: 3600000 // 1 heure maximum
     },
-  }
+  },
+  // Les adapters de synchronisation permettent de mettre à jour les stores
+  // après qu'une entité ait été persistée avec succès (mise à jour des _id MongoDB)
+  syncAdapters: [
+    notesStore.noteSyncAdapter,
+    notesStore.tagSyncAdapter
+  ]
 });
-
-// ─── Initialiser les listeners de persistance dans le store ────────────────────────
-// Le store écoute les événements de persistance pour mettre à jour les _id MongoDB
-notesStore.initPersistenceListeners();
 
 // ─── Initialiser l'authentification au démarrage ──────────────────────────────────
 // - Vérifie si un token existe dans localStorage

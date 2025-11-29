@@ -16,11 +16,14 @@ modules/persistence/          # Module générique (réutilisable)
 │   ├── eventBus.ts           # EventBus générique et réutilisable
 │   ├── queue.ts              # QueueManager avec séquençage, retry, priorité
 │   ├── orchestrator.ts       # Orchestrateur générique
+│   ├── retryManager.ts       # Gestionnaire de retry avec backoff exponentiel
 │   └── index.ts              # Exports centralisés
 ├── persisting/               # Persistance via Pinia/localStorage
 │   ├── queue/                # QueueManager persisté
 │   ├── store/                # Store Pinia pour la queue
 │   └── utils/                # Utilitaires de sérialisation
+├── sync/                     # Synchronisation des stores après persistance
+│   └── syncAdapters.ts       # Système de sync adapters
 ├── usePersistence.ts         # Composable Vue pour initialisation
 └── index.ts                  # Exports centralisés
 
@@ -77,8 +80,15 @@ Chaque tâche de persistance (`PersistenceTask`) a également :
 ### 6. **Composable Vue** (`usePersistence.ts`)
 - Initialise le système de persistance (EventBus, QueueManager, Orchestrator)
 - Accepte les stratégies en paramètre (injection de dépendances)
+- Accepte les sync adapters pour synchroniser les stores après persistance
 - Doit être appelé une seule fois au niveau de l'application
 - Les stratégies sont définies en dehors du module (spécifiques au projet)
+
+### 7. **Sync Adapters** (`sync/syncAdapters.ts`)
+- Système de synchronisation des stores après persistance réussie
+- Permet aux stores d'exposer des adapters pour mettre à jour leurs données
+- Respecte le principe SOC : la logique de synchronisation reste dans le store
+- Gère automatiquement les événements `entity:persisted` et `entity:persist-error`
 
 ## Utilisation
 
@@ -89,8 +99,11 @@ import { usePersistence } from '@/modules/persistence'
 import { NoteRestApiStrategy, TagRestApiStrategy } from '@/persistence/strategies'
 import { useNotesStore } from '@/stores/notes'
 
+const notesStore = useNotesStore()
+
 // Dans App.vue
 // Initialise EventBus, QueueManager et Orchestrator avec les stratégies spécifiques au projet
+// Les sync adapters permettent de synchroniser les stores après persistance
 usePersistence({
   strategies: {
     note: new NoteRestApiStrategy(),
@@ -99,14 +112,66 @@ usePersistence({
   options: {
     retryConfig: {
       maxRetries: 3,        // 3 tentatives maximum
-      initialDelay: 180000, // 3 minutes pour le premier retry
+      initialDelay: 180000, // 3 minutes pour le premier retry (override de la valeur par défaut de 30s)
       multiplier: 4,        // Multiplicateur exponentiel : 3min → 12min → 48min
-      maxDelay: 3600000     // 1 heure maximum (optionnel)
+      maxDelay: 3600000     // 1 heure maximum (override de la valeur par défaut de 10min)
     }
-  }
+  },
+  // Les adapters de synchronisation permettent de mettre à jour les stores
+  // après qu'une entité ait été persistée avec succès (mise à jour des _id MongoDB)
+  syncAdapters: [
+    notesStore.noteSyncAdapter,
+    notesStore.tagSyncAdapter
+  ]
 })
-notesStore.initPersistenceListeners() // Le store écoute les événements de persistance
 ```
+
+### Synchronisation des Stores après Persistance
+
+Les **sync adapters** permettent aux stores de synchroniser leurs données après qu'une entité ait été persistée avec succès. Cette approche respecte le principe SOC (Separation of Concerns) :
+
+- **Le store** expose des adapters qui contiennent la logique de synchronisation
+- **Le module de persistance** utilise ces adapters sans connaître les détails du store
+- **Tout est centralisé** dans `usePersistence()` lors de l'initialisation
+
+#### Exemple dans le store
+
+```typescript
+// Dans stores/notes.ts
+const noteSyncAdapter: SyncAdapter<NoteType> = {
+  entityType: 'note',
+  syncEntity: (original, persisted) => {
+    // Si la note a été créée et qu'on a maintenant un _id du backend
+    if (original.frontId && persisted._id && !original._id) {
+      syncNote(original.frontId, {
+        _id: persisted._id
+      })
+    } else if (persisted._id) {
+      // Mise à jour d'une note existante
+      syncNote(persisted.frontId, {
+        _id: persisted._id
+      })
+    }
+  },
+  onError: (error, entity) => {
+    console.warn(`Erreur de persistance pour note:`, entity.frontId, error)
+  }
+}
+
+return {
+  // ... autres exports
+  noteSyncAdapter,
+  tagSyncAdapter
+}
+```
+
+#### Avantages de cette approche
+
+1. **SOC respectée** : La logique de synchronisation reste dans le store (propriétaire des données)
+2. **Découplage** : Le module de persistance ne connaît pas les détails du store
+3. **Centralisation** : Tout est configuré dans `usePersistence()` au démarrage
+4. **Testabilité** : Les adapters sont testables indépendamment
+5. **Extensibilité** : Facile d'ajouter de nouveaux adapters pour d'autres types d'entités
 
 ### Configuration du Retry
 
@@ -121,20 +186,22 @@ Le système de persistance utilise un **backoff exponentiel non-bloquant** pour 
 #### Paramètres de configuration
 
 - **`maxRetries`** : Nombre de tentatives maximum (défaut: 3)
-- **`initialDelay`** : Délai initial du premier retry en millisecondes (défaut: 180000 = 3 minutes)
+- **`initialDelay`** : Délai initial du premier retry en millisecondes (défaut: 30000 = 30 secondes)
 - **`multiplier`** : Multiplicateur pour le backoff exponentiel (défaut: 4)
-- **`maxDelay`** : Délai maximum en millisecondes, optionnel (défaut: 3600000 = 1 heure)
+- **`maxDelay`** : Délai maximum en millisecondes, optionnel (défaut: 600000 = 10 minutes)
 
 #### Formule de calcul
 
 Le délai entre chaque retry est calculé avec la formule : `delay = initialDelay × multiplier^(retryCount-1)`
 
-**Exemple avec la configuration par défaut** (initialDelay=3min, multiplier=4) :
-- **1er retry** (retryCount=1) : 3min × 4⁰ = **3 minutes**
-- **2ème retry** (retryCount=2) : 3min × 4¹ = **12 minutes**
-- **3ème retry** (retryCount=3) : 3min × 4² = **48 minutes** (limité à 1h par maxDelay)
+**Exemple avec la configuration par défaut** (initialDelay=30s, multiplier=4, maxDelay=10min) :
+- **1er retry** (retryCount=1) : 30s × 4⁰ = **30 secondes**
+- **2ème retry** (retryCount=2) : 30s × 4¹ = **2 minutes**
+- **3ème retry** (retryCount=3) : 30s × 4² = **8 minutes** (limité à 10min par maxDelay)
 
 Si `maxDelay` est défini, le délai est limité à cette valeur.
+
+**Note** : Dans `App.vue`, la configuration est surchargée avec `initialDelay=180000` (3 minutes) et `maxDelay=3600000` (1 heure) pour des délais plus longs adaptés à l'application.
 
 #### Implémentation Non-Bloquante
 
@@ -154,10 +221,10 @@ usePersistence({
     note: new NoteRestApiStrategy(),
     tag: new TagRestApiStrategy()
   },
-  options: {
+    options: {
     retryConfig: {
       maxRetries: 3,
-      initialDelay: 180000,
+      initialDelay: 30000,  // 30 secondes (valeur par défaut)
       multiplier: 4
     },
     retryConfigByEntityType: {
@@ -220,10 +287,16 @@ function addTag(tag: TagType) {
 ┌─────────────┐
 │ Event Bus   │
 └──────┬──────┘
-       │ écoute
+       │ émet 'entity:persisted'
        ▼
 ┌─────────────┐
-│   Store     │ (met à jour _id MongoDB)
+│Sync Adapters│ (met à jour _id MongoDB via syncEntity)
+│   Manager   │
+└──────┬──────┘
+       │ appelle
+       ▼
+┌─────────────┐
+│   Store     │ (syncNote, syncTag, etc.)
 └─────────────┘
 ```
 
@@ -287,17 +360,45 @@ export class MyEntityRestApiStrategy implements PersistenceStrategy<MyEntityType
 }
 ```
 
-2. Enregistrer la stratégie lors de l'initialisation dans `App.vue` :
+2. Créer un sync adapter dans le store :
+```typescript
+// Dans stores/myEntity.ts
+const myEntitySyncAdapter: SyncAdapter<MyEntityType> = {
+  entityType: 'myEntity',
+  syncEntity: (original, persisted) => {
+    // Logique de synchronisation (mise à jour des _id, etc.)
+    syncMyEntity(original.frontId, { _id: persisted._id })
+  },
+  onError: (error, entity) => {
+    console.warn(`Erreur de persistance pour myEntity:`, entity.frontId, error)
+  }
+}
+
+return {
+  // ... autres exports
+  myEntitySyncAdapter
+}
+```
+
+3. Enregistrer la stratégie et l'adapter lors de l'initialisation dans `App.vue` :
 ```typescript
 import { usePersistence } from '@/modules/persistence'
 import { MyEntityRestApiStrategy } from '@/persistence/strategies'
+import { useMyEntityStore } from '@/stores/myEntity'
+
+const myEntityStore = useMyEntityStore()
 
 usePersistence({
-  myEntity: new MyEntityRestApiStrategy()
+  strategies: {
+    myEntity: new MyEntityRestApiStrategy()
+  },
+  syncAdapters: [
+    myEntityStore.myEntitySyncAdapter
+  ]
 })
 ```
 
-3. Émettre des événements depuis le store :
+4. Émettre des événements depuis le store :
 ```typescript
 eventBus.emit('entity:created', { entityType: 'myEntity', data: myEntity })
 ```
@@ -314,4 +415,5 @@ eventBus.emit('entity:created', { entityType: 'myEntity', data: myEntity })
 ✅ **Queue Persistée** : La queue est automatiquement persistée dans localStorage via Pinia  
 ✅ **Retry Automatique** : Backoff exponentiel non-bloquant avec `retryAt`  
 ✅ **Fail-Safe** : Toutes les erreurs sont retryables par défaut  
-✅ **Support Offline** : Les tâches restent en queue et sont retraitées automatiquement
+✅ **Support Offline** : Les tâches restent en queue et sont retraitées automatiquement  
+✅ **Sync Adapters** : Système de synchronisation des stores après persistance réussie (mise à jour des `_id` MongoDB)

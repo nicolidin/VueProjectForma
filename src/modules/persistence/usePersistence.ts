@@ -11,6 +11,7 @@ import { PersistenceOrchestrator, type OrchestratorOptions } from './core/orches
 import type { PersistenceEvents, PersistenceStrategy, TaskPriority } from './core/types'
 import type { RetryConfig } from './core/retryManager'
 import { initPersistenceQueueStore } from './persisting/store'
+import { SyncAdaptersManager, type SyncAdapter } from './sync/syncAdapters'
 
 /**
  * Configuration des stratégies de persistance
@@ -66,6 +67,11 @@ export interface PersistenceConfig {
    * Options de configuration (retries, priorités, etc.)
    */
   options?: PersistenceOptions
+  /**
+   * Adapters de synchronisation pour mettre à jour les stores après persistance
+   * Les stores exposent ces adapters qui sont ensuite enregistrés ici
+   */
+  syncAdapters?: Array<SyncAdapter>
 }
 
 /**
@@ -84,6 +90,11 @@ let persistenceQueue: PersistedQueueManager | null = null
  * Instance globale de l'orchestrateur
  */
 let orchestrator: PersistenceOrchestrator | null = null
+
+/**
+ * Instance globale du gestionnaire de sync adapters
+ */
+let syncAdaptersManager: SyncAdaptersManager | null = null
 
 /**
  * Composable pour initialiser le système de persistance
@@ -161,6 +172,18 @@ export function usePersistence(
     }
   } else {
     console.log('[usePersistence] Orchestrator already exists')
+  }
+
+  // Initialiser le gestionnaire de sync adapters
+  if (!syncAdaptersManager) {
+    syncAdaptersManager = new SyncAdaptersManager(persistenceEventBus)
+    console.log('[usePersistence] SyncAdaptersManager created')
+  }
+  
+  // Enregistrer les adapters si fournis
+  if (config && 'syncAdapters' in config && config.syncAdapters) {
+    syncAdaptersManager.registerAll(config.syncAdapters)
+    console.log(`[usePersistence] ${config.syncAdapters.length} sync adapter(s) registered`)
   }
 
   // Nettoyage lors du démontage (si nécessaire)
