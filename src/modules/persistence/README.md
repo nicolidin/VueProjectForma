@@ -33,13 +33,33 @@ persistence/                  # Configurations spécifiques au projet
     └── index.ts              # Exports centralisés
 ```
 
+### Organisation du Code : Pourquoi cette Structure ?
+
+Cette architecture respecte plusieurs principes importants :
+
+1. **Séparation Générique/Spécifique** :
+   - `modules/persistence/` : Code générique et réutilisable (peut être utilisé dans d'autres projets)
+   - `persistence/strategies/` : Code spécifique au projet (appels API, logique métier)
+
+2. **Separation of Concerns (SOC)** :
+   - Chaque composant a une responsabilité unique et claire
+   - Les dépendances sont unidirectionnelles (du haut vers le bas)
+   - Pas de couplage fort entre les composants
+
+3. **Inversion de Dépendances** :
+   - Le module générique définit des interfaces (`PersistenceStrategy`)
+   - Le projet implémente ces interfaces (stratégies REST)
+   - Le module utilise les implémentations sans les connaître
+
 ## Principe de Fonctionnement
 
-### 1. **EventBus** (`core/eventBus.ts`)
+### 1. **EventBus** (`core/eventBus.ts` / `usePersistence.ts`)
 - Système de communication découplé entre le store et les services de persistance
+- **EventBus global** : Créé dès le chargement du module (`usePersistence.ts`), toujours disponible
 - Le store émet des événements génériques (`entity:created`, `entity:updated`, `entity:deleted`)
 - Les services de persistance écoutent ces événements
 - Supporte les handlers synchrones et asynchrones
+- **Important** : L'EventBus est disponible même avant l'initialisation du service, permettant aux stores de s'initialiser en premier
 
 ### 2. **QueueManager** (`core/queue.ts` / `persisting/queue/PersistedQueueManager.ts`)
 - Gère les tâches de persistance de manière séquentielle (ou avec parallélisme limité)
@@ -77,18 +97,184 @@ Chaque tâche de persistance (`PersistenceTask`) a également :
 - `expiresAt`: Timestamp d'expiration de la tâche (optionnel)
 - `maxAge`: Âge maximum de la tâche en ms (optionnel)
 
-### 6. **Composable Vue** (`usePersistence.ts`)
-- Initialise le système de persistance (EventBus, QueueManager, Orchestrator)
-- Accepte les stratégies en paramètre (injection de dépendances)
-- Accepte les sync adapters pour synchroniser les stores après persistance
-- Doit être appelé une seule fois au niveau de l'application
-- Les stratégies sont définies en dehors du module (spécifiques au projet)
+### 6. **PersistenceService** (`usePersistence.ts`)
+Le cœur du système de persistance est la classe `PersistenceService` qui encapsule tout l'état et la logique d'initialisation :
 
-### 7. **Sync Adapters** (`sync/syncAdapters.ts`)
+#### Architecture interne
+```typescript
+class PersistenceService {
+  private readonly queue: PersistedQueueManager
+  private readonly orchestrator: PersistenceOrchestrator
+  private readonly syncAdaptersManager: SyncAdaptersManager
+  // Utilise l'EventBus global (créé au chargement du module)
+}
+```
+
+#### Responsabilités
+- **Encapsulation** : Toute l'état (queue, orchestrator, syncAdapters) est centralisé dans une seule classe
+- **Initialisation** : Crée et configure tous les composants (QueueManager, Orchestrator, SyncAdaptersManager)
+- **Gestion des stratégies** : Enregistre les stratégies de persistance pour chaque type d'entité
+- **Singleton** : Une seule instance pour toute l'application (gérée par `usePersistence()`)
+- **Testabilité** : Méthode `destroy()` pour nettoyer les ressources en tests
+
+#### Pattern Singleton
+Le service est accessible via la fonction `usePersistence()` qui implémente un pattern singleton :
+- Premier appel : Crée une nouvelle instance de `PersistenceService`
+- Appels suivants : Retourne l'instance existante (ignore toute nouvelle config)
+- Garantit qu'une seule instance existe dans l'application
+
+### 7. **Composable Vue** (`usePersistence.ts`)
+La fonction `usePersistence()` est le point d'entrée public pour initialiser le système :
+
+#### Fonctionnalités
+- **Initialisation** : Crée le `PersistenceService` avec la configuration fournie
+- **Injection de dépendances** : Accepte les stratégies en paramètre (spécifiques au projet)
+- **Sync Adapters** : Accepte les adapters pour synchroniser les stores après persistance
+- **Rétrocompatibilité** : Supporte deux formats de configuration (ancien et nouveau)
+- **Ordre d'initialisation flexible** : L'EventBus est disponible avant l'initialisation
+
+#### API Publique
+```typescript
+// Initialisation (retourne PersistenceService)
+const service = usePersistence(config)
+
+// Accès à l'EventBus (toujours disponible, même avant usePersistence())
+const eventBus = getPersistenceEventBus()
+
+// Accès au service (nécessite que usePersistence() ait été appelé)
+const service = getPersistenceService()
+
+// Réinitialisation (pour les tests uniquement)
+resetPersistenceService()
+```
+
+### 8. **Sync Adapters** (`sync/syncAdapters.ts`)
 - Système de synchronisation des stores après persistance réussie
 - Permet aux stores d'exposer des adapters pour mettre à jour leurs données
 - Respecte le principe SOC : la logique de synchronisation reste dans le store
 - Gère automatiquement les événements `entity:persisted` et `entity:persist-error`
+
+## Architecture Interne : Comment ça marche ?
+
+### Code Source : Points Clés à Comprendre
+
+Pour bien comprendre le module, voici les points clés du code source :
+
+#### 1. EventBus Global (`usePersistence.ts` ligne 81)
+```typescript
+const persistenceEventBus = new EventBus<PersistenceEvents>()
+```
+**Pourquoi global ?** 
+- Créé au chargement du module (avant toute initialisation)
+- Permet aux stores d'accéder à l'EventBus même si `usePersistence()` n'a pas encore été appelé
+- Résout le problème d'ordre d'initialisation entre stores et service
+
+#### 2. Classe PersistenceService (`usePersistence.ts` ligne 88)
+```typescript
+class PersistenceService {
+  private readonly queue: PersistedQueueManager
+  private readonly orchestrator: PersistenceOrchestrator
+  private readonly syncAdaptersManager: SyncAdaptersManager
+  // ...
+}
+```
+**Pourquoi une classe ?**
+- Encapsule tout l'état dans un seul objet (principe SOC)
+- Facilite la testabilité (méthode `destroy()` pour nettoyer)
+- Pattern singleton explicite et contrôlé
+- API claire avec des getters typés
+
+#### 3. Singleton Pattern (`usePersistence.ts` ligne 241)
+```typescript
+let serviceInstance: PersistenceService | null = null
+
+export function usePersistence(config?: ...): PersistenceService {
+  if (serviceInstance) {
+    return serviceInstance  // Retourne l'instance existante
+  }
+  serviceInstance = new PersistenceService(config)
+  return serviceInstance
+}
+```
+**Pourquoi singleton ?**
+- Garantit une seule instance dans l'application
+- Évite les conflits de configuration
+- Centralise la gestion d'état
+
+#### 4. Normalisation de Config (`usePersistence.ts` ligne 171)
+```typescript
+private normalizeConfig(config?: PersistenceConfig | PersistenceStrategies) {
+  // Supporte deux formats pour rétrocompatibilité
+  if ('strategies' in config) {
+    return { strategies: config.strategies, options: config.options }
+  }
+  return { strategies: config }  // Ancien format
+}
+```
+**Pourquoi cette méthode ?**
+- Rétrocompatibilité avec l'ancien format
+- Simplifie la logique d'initialisation
+- Code plus maintenable
+
+### Ordre d'Initialisation
+
+Le système est conçu pour être **flexible** en termes d'ordre d'initialisation :
+
+1. **Chargement du module** : L'EventBus global est créé immédiatement
+   ```typescript
+   // Dans usePersistence.ts (au chargement du module)
+   const persistenceEventBus = new EventBus<PersistenceEvents>()
+   ```
+
+2. **Initialisation des stores** : Les stores peuvent s'initialiser et accéder à l'EventBus
+   ```typescript
+   // Dans stores/notes.ts
+   const eventBus = getPersistenceEventBus() // ✅ Toujours disponible
+   ```
+
+3. **Initialisation du service** : `usePersistence()` crée le `PersistenceService`
+   ```typescript
+   // Dans App.vue
+   usePersistence({ strategies: {...}, syncAdapters: [...] })
+   ```
+
+**Pourquoi cette approche ?**
+- Les stores Pinia peuvent être initialisés avant `usePersistence()`
+- L'EventBus est toujours disponible, même si le service n'est pas encore prêt
+- Les événements émis avant l'initialisation sont simplement ignorés (pas de crash)
+
+### Cycle de Vie d'une Tâche de Persistance
+
+Voici le parcours complet d'une tâche, étape par étape :
+
+```
+1. Store émet un événement
+   └─> eventBus.emit('entity:created', { entityType: 'note', data: note })
+
+2. Orchestrator écoute l'événement
+   └─> Crée une PersistenceTask avec métadonnées
+   └─> Enqueue dans PersistedQueueManager
+
+3. QueueManager traite la tâche
+   └─> Vérifie retryAt (si présent, attend)
+   └─> Appelle le processeur (orchestrator.processTask)
+
+4. Orchestrator exécute la stratégie
+   └─> Récupère la stratégie pour le type d'entité
+   └─> Appelle strategy.persistCreate/Update/Delete
+
+5. Stratégie fait l'appel API
+   └─> NoteRestApiStrategy.persistCreate()
+   └─> Appel HTTP vers le backend
+
+6. Succès ou Erreur
+   ├─> Succès : Émet 'entity:persisted'
+   │   └─> SyncAdaptersManager appelle syncEntity()
+   │       └─> Store met à jour _id MongoDB
+   └─> Erreur : Analyse avec RetryManager
+       ├─> Récupérable : Calcule retryAt, met à jour la tâche
+       └─> Définitif : Émet 'entity:persist-error', retire de la queue
+```
 
 ## Utilisation
 
@@ -237,22 +423,57 @@ usePersistence({
 <｜tool▁calls▁begin｜><｜tool▁call▁begin｜>
 read_file
 
-### Émission d'événements depuis le store
+### Accès à l'EventBus dans les stores
 
-Le store émet automatiquement des événements lors des modifications :
+Les stores doivent accéder à l'EventBus via `getPersistenceEventBus()`. Cette fonction est **toujours disponible**, même si `usePersistence()` n'a pas encore été appelé :
 
 ```typescript
-// Dans le store
-function addNote(note: NoteType) {
-  notes.value.push(note)
-  eventBus.emit('entity:created', { entityType: 'note', data: note })
-}
+// Dans stores/notes.ts
+import { getPersistenceEventBus } from '@/modules/persistence'
 
-function addTag(tag: TagType) {
-  tags.value.push(tag)
-  eventBus.emit('entity:created', { entityType: 'tag', data: tag })
+export const useNotesStore = defineStore('notes', () => {
+  // ✅ L'EventBus est toujours disponible, même avant usePersistence()
+  const eventBus = getPersistenceEventBus()
+  
+  function addNote(note: NoteType) {
+    notes.value.push(note)
+    // Émettre l'événement pour déclencher la persistance
+    eventBus.emit('entity:created', { entityType: 'note', data: note })
+  }
+  
+  function addTag(tag: TagType) {
+    tags.value.push(tag)
+    eventBus.emit('entity:created', { entityType: 'tag', data: tag })
+  }
+  
+  // ... reste du code
+})
+```
+
+**Note importante** : Si vous émettez des événements avant que `usePersistence()` ne soit appelé, ces événements seront simplement ignorés (pas de listeners encore enregistrés). C'est un comportement attendu et sans danger.
+
+### API Avancée (pour utilisation avancée)
+
+Si vous avez besoin d'accéder directement au service (pour debug, monitoring, etc.) :
+
+```typescript
+import { getPersistenceService } from '@/modules/persistence'
+
+// Accéder au service (nécessite que usePersistence() ait été appelé)
+const service = getPersistenceService()
+
+// Accéder aux composants internes
+const queue = service.getQueue()
+const orchestrator = service.getOrchestrator()
+const eventBus = service.getEventBus()
+
+// Vérifier l'état
+if (service.isInitialized()) {
+  console.log('Service initialisé')
 }
 ```
+
+**⚠️ Attention** : Cette API est destinée à un usage avancé. En général, vous n'avez pas besoin d'y accéder directement.
 
 ## Flux de Données
 
@@ -416,4 +637,33 @@ eventBus.emit('entity:created', { entityType: 'myEntity', data: myEntity })
 ✅ **Retry Automatique** : Backoff exponentiel non-bloquant avec `retryAt`  
 ✅ **Fail-Safe** : Toutes les erreurs sont retryables par défaut  
 ✅ **Support Offline** : Les tâches restent en queue et sont retraitées automatiquement  
-✅ **Sync Adapters** : Système de synchronisation des stores après persistance réussie (mise à jour des `_id` MongoDB)
+✅ **Sync Adapters** : Système de synchronisation des stores après persistance réussie (mise à jour des `_id` MongoDB)  
+✅ **Service Encapsulé** : Architecture avec `PersistenceService` pour une meilleure SOC  
+✅ **EventBus Global** : Disponible dès le chargement du module, ordre d'initialisation flexible  
+✅ **Singleton Explicite** : Pattern singleton contrôlé pour garantir une seule instance
+
+## Tests
+
+Le module fournit une fonction utilitaire pour réinitialiser le service entre les tests :
+
+```typescript
+import { resetPersistenceService } from '@/modules/persistence'
+
+describe('My tests', () => {
+  beforeEach(() => {
+    // Réinitialiser le service avant chaque test
+    resetPersistenceService()
+  })
+  
+  it('should persist an entity', async () => {
+    // Initialiser avec une config de test
+    usePersistence({
+      strategies: { note: new MockNoteStrategy() }
+    })
+    
+    // ... vos tests
+  })
+})
+```
+
+**⚠️ Important** : `resetPersistenceService()` est destiné uniquement aux tests. Ne l'utilisez jamais en production.
