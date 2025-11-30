@@ -58,3 +58,4 @@ export const getCurrentUser = async (): Promise<UserType> => {
   }
 };
 
+

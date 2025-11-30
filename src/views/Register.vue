@@ -3,7 +3,7 @@
     <v-container class="register__container">
       <v-card class="register__card">
         <v-card-title class="register__title">Inscription</v-card-title>
-        
+
         <v-card-text>
           <RegisterForm
             v-model:nom="nom"
@@ -53,7 +53,7 @@ const confirmPassword = ref('');
 // - Toute la logique est ici, pas dans le composant
 async function handleRegister() {
   const success = await authStore.registerUser(nom.value, email.value, password.value);
-  
+
   if (success) {
     // Rediriger vers la page d'accueil après inscription réussie
     router.push('/');
