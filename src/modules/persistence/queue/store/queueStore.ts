@@ -140,6 +140,21 @@ export function initPersistenceQueueStore(): void {
       store.pendingTasks = validTasks
       console.log(`[PersistenceQueueStore] Filtered ${store.pendingTasks.length - validTasks.length} invalid tasks`)
     }
+    
+    // Réinitialiser les retryAt des tâches restaurées
+    // Après un refresh, on veut réessayer immédiatement (le back pourrait être up maintenant)
+    // plutôt que d'attendre le retryAt calculé avant le refresh
+    const now = Date.now()
+    let resetCount = 0
+    for (const task of validTasks) {
+      if (task.retryAt && task.retryAt > now) {
+        store.updateTask(task.id, { retryAt: undefined })
+        resetCount++
+      }
+    }
+    if (resetCount > 0) {
+      console.log(`[PersistenceQueueStore] Reset ${resetCount} task retryAt for immediate retry after page refresh`)
+    }
   }
 }
 

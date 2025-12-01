@@ -180,7 +180,8 @@ export class PersistedQueueManager<T = unknown> {
   }
 
   /**
-   * Démarre le traitement de la queue (simplifié avec helpers purs)
+   * Démarre le traitement de la queue
+   * Continue tant qu'il y a des tâches en queue ou en cours de traitement
    * @private
    */
   private async startProcessing(): Promise<void> {
@@ -188,45 +189,51 @@ export class PersistedQueueManager<T = unknown> {
 
     this.isRunning = true
 
-    while (true) {
-      const queueStore = this.getQueueStore()
-      
-      if (queueStore.queueSize === 0 && this.processing.size === 0) {
-        break
-      }
-
-      const sortedTasks = queueStore.sortedTasks as PersistenceTask<T>[]
-      const now = Date.now()
-
-      // Utiliser helper pur pour sélectionner les tâches
-      const readyTasks = QueueHelpers.getReadyTasks(
-        sortedTasks,
-        this.processing,
-        this.maxConcurrent,
-        now
-      )
-
-      // Nettoyer retryAt des tâches prêtes
-      for (const task of readyTasks) {
-        if (task.retryAt) {
-          queueStore.updateTask(task.id, { retryAt: undefined })
+    try {
+      while (true) {
+        const queueStore = this.getQueueStore()
+        
+        // Sortir de la boucle uniquement si la queue est vide ET aucune tâche n'est en cours
+        if (queueStore.queueSize === 0 && this.processing.size === 0) {
+          break
         }
-      }
 
-      // Traiter les tâches en parallèle
-      if (readyTasks.length > 0) {
-        const promises = readyTasks.map(task => this.processTask(task))
-        await Promise.allSettled(promises)
-      }
+        const sortedTasks = queueStore.sortedTasks as PersistenceTask<T>[]
+        const now = Date.now()
 
-      // Utiliser helper pur pour calculer le prochain retry
-      const nextRetryAt = QueueHelpers.getNextRetryTime(sortedTasks, now)
-      
-      // Attendre selon la situation
-      await this.waitForNextAction(nextRetryAt, queueStore.queueSize, readyTasks.length)
+        // Utiliser helper pur pour sélectionner les tâches
+        const readyTasks = QueueHelpers.getReadyTasks(
+          sortedTasks,
+          this.processing,
+          this.maxConcurrent,
+          now
+        )
+
+        // Nettoyer retryAt des tâches prêtes (elles vont être traitées maintenant)
+        for (const task of readyTasks) {
+          if (task.retryAt) {
+            queueStore.updateTask(task.id, { retryAt: undefined })
+          }
+        }
+
+        // Traiter les tâches en parallèle
+        if (readyTasks.length > 0) {
+          const promises = readyTasks.map(task => this.processTask(task))
+          await Promise.allSettled(promises)
+        }
+
+        // Calculer le prochain retry (pour les tâches qui ont échoué et ont un retryAt futur)
+        const nextRetryAt = QueueHelpers.getNextRetryTime(sortedTasks, now)
+        
+        // Attendre selon la situation avant la prochaine itération
+        await this.waitForNextAction(nextRetryAt, queueStore.queueSize, readyTasks.length)
+      }
+    } catch (error) {
+      console.error('[PersistedQueueManager] Error in processing loop:', error)
+      // Ne pas relancer l'erreur, mais s'assurer que isRunning est réinitialisé
+    } finally {
+      this.isRunning = false
     }
-
-    this.isRunning = false
   }
 
   /**

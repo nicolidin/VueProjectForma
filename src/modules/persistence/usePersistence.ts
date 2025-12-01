@@ -114,11 +114,15 @@ class PersistenceService {
     }
 
     // Démarrer le traitement si des tâches sont en attente
+    // Le store Pinia est déjà hydraté de manière synchrone par le plugin,
+    // donc on peut vérifier immédiatement la taille de la queue
     const initialQueueSize = this.queue.size()
     console.log('[PersistenceService] Initial queue size:', initialQueueSize)
     if (initialQueueSize > 0) {
       console.log('[PersistenceService] Starting queue processing for', initialQueueSize, 'pending tasks')
       this.queue.restart()
+    } else {
+      console.log('[PersistenceService] No pending tasks, processor ready for future tasks')
     }
 
     console.log('[PersistenceService] Persistence service initialized successfully')
